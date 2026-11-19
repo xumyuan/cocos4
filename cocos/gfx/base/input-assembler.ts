@@ -63,6 +63,11 @@ export abstract class InputAssembler extends GFXObject {
         return this._indirectBuffer;
     }
 
+    /** Raw GPU argument metadata. Null preserves the legacy CPU DrawInfo path. */
+    get gpuIndirect (): InputAssemblerInfo['gpuIndirect'] {
+        return this._gpuIndirect;
+    }
+
     /**
      * @en Get hash of current attributes.
      * @zh 获取顶点属性数组的哈希值。
@@ -174,6 +179,8 @@ export abstract class InputAssembler extends GFXObject {
     protected _indexBuffer: Buffer | null = null;
     /** @mangle */
     protected _indirectBuffer: Buffer | null = null;
+    /** @mangle */
+    protected _gpuIndirect: InputAssemblerInfo['gpuIndirect'] = null;
     /** @mangle */
     protected _drawInfo = new DrawInfo();
 

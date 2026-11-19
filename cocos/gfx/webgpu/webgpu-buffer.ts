@@ -162,10 +162,10 @@ export class WebGPUBuffer extends Buffer {
         let buffSize: number;
         if (size !== undefined) {
             buffSize = size;
-        } else if (this._usage & BufferUsageBit.INDIRECT) {
+        } else if ('drawInfos' in buffer) {
             buffSize = 0;
         } else {
-            buffSize = (buffer as ArrayBuffer).byteLength;
+            buffSize = buffer.byteLength;
         }
         // Make sure buffSize is a multiple of 4
         buffSize = Math.ceil(buffSize / 4.0) * 4;

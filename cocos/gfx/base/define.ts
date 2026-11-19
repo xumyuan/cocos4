@@ -774,6 +774,8 @@ export class DeviceCaps {
         public clipSpaceMinZ: number = -1,
         public screenSpaceSignY: number = 1,
         public clipSpaceSignY: number = 1,
+        /** Maximum bytes in a single buffer; zero means this backend does not report it. */
+        public maxBufferSize: number = 0,
     ) {}
 
     public copy (info: Readonly<DeviceCaps>): DeviceCaps {
@@ -803,6 +805,7 @@ export class DeviceCaps {
         this.clipSpaceMinZ = info.clipSpaceMinZ;
         this.screenSpaceSignY = info.screenSpaceSignY;
         this.clipSpaceSignY = info.clipSpaceSignY;
+        this.maxBufferSize = info.maxBufferSize;
         return this;
     }
 }
@@ -1551,6 +1554,16 @@ export class ShaderInfo {
     }
 }
 
+/** Explicit metadata for GPU-written indirect argument bytes, separate from CPU DrawInfo lists. */
+export interface GPUIndirectDrawInfo {
+    /** Byte offset in the input assembler's indirectBuffer. Defaults to 0. */
+    readonly offset?: number;
+    /** Number of commands, not the GPU-owned instance count. Defaults to 1. */
+    readonly count?: number;
+    /** Byte stride. Defaults to 20 with an index buffer, otherwise 16. */
+    readonly stride?: number;
+}
+
 export class InputAssemblerInfo {
     declare private _token: never; // to make sure all usages must be an instance of this exact class, not assembled from plain object
 
@@ -1559,6 +1572,7 @@ export class InputAssemblerInfo {
         public vertexBuffers: Buffer[] = [],
         public indexBuffer: Buffer | null = null,
         public indirectBuffer: Buffer | null = null,
+        public gpuIndirect: GPUIndirectDrawInfo | null = null,
     ) {}
 
     public copy (info: Readonly<InputAssemblerInfo>): InputAssemblerInfo {
@@ -1566,6 +1580,7 @@ export class InputAssemblerInfo {
         this.vertexBuffers = info.vertexBuffers.slice();
         this.indexBuffer = info.indexBuffer;
         this.indirectBuffer = info.indirectBuffer;
+        this.gpuIndirect = info.gpuIndirect ? { ...info.gpuIndirect } : null;
         return this;
     }
 }

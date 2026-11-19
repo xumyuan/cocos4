@@ -38,7 +38,12 @@ export class WebGPUInputAssembler extends InputAssembler {
     private _gpuInputAssembler: IWebGPUGPUInputAssembler | null = null;
 
     public initialize (info: Readonly<InputAssemblerInfo>): void {
-        if (info.vertexBuffers.length === 0) {
+        if (info.gpuIndirect && !info.indirectBuffer) {
+            throw new Error('GPU indirect input assemblers require an indirectBuffer.');
+        }
+        // Procedural shaders can derive all vertices from vertex/instance IDs
+        // and storage buffers. They need a valid IA even with no vertex streams.
+        if (info.vertexBuffers.length === 0 && info.attributes.length !== 0) {
             errorID(16331);
             return;
         }
@@ -53,7 +58,7 @@ export class WebGPUInputAssembler extends InputAssembler {
             this.drawInfo.firstIndex = 0;
         } else {
             const vertBuff = this._vertexBuffers[0];
-            this.drawInfo.vertexCount = vertBuff.size / vertBuff.stride;
+            this.drawInfo.vertexCount = vertBuff ? vertBuff.size / vertBuff.stride : 0;
             this.drawInfo.firstVertex = 0;
             this.drawInfo.vertexOffset = 0;
         }
@@ -62,6 +67,7 @@ export class WebGPUInputAssembler extends InputAssembler {
         this._drawInfo.firstInstance = 0;
 
         this._indirectBuffer = info.indirectBuffer || null;
+        this._gpuIndirect = info.gpuIndirect ? { ...info.gpuIndirect } : null;
         const vertBuffSize = info.vertexBuffers.length;
         const gpuVertexBuffers: IWebGPUGPUBuffer[] = new Array<IWebGPUGPUBuffer>(vertBuffSize);
         for (let i = 0; i < vertBuffSize; ++i) {

@@ -136,6 +136,28 @@ export class WebGPUDevice extends Device {
     public async copyTextureToBuffers (texture: Readonly<Texture>, buffers: ArrayBufferView[], regions: readonly BufferTextureCopy[]): Promise<void> {
         await WebGPUCmdFuncCopyTextureToBuffer(this, (texture as WebGPUTexture).gpuTexture, buffers, regions);
     }
+
+    public async readBuffer (buffer: Buffer, offset = 0, size = buffer.size - offset): Promise<ArrayBuffer> {
+        const source = (buffer as WebGPUBuffer).gpuBuffer;
+        if (!(buffer.usage & BufferUsageBit.TRANSFER_SRC) || !source?.gpuBuffer
+            || !Number.isSafeInteger(offset) || !Number.isSafeInteger(size) || offset < 0 || size < 0
+            || offset % 4 !== 0 || size % 4 !== 0 || offset + size > buffer.size
+            || (source.gpuOffset + offset) % 4 !== 0) {
+            throw new RangeError('Buffer readback requires a live TRANSFER_SRC buffer and an aligned byte range.');
+        }
+        if (size === 0) return new ArrayBuffer(0);
+        const device = this._device!;
+        const staging = device.createBuffer({ size, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+        try {
+            const encoder = device.createCommandEncoder();
+            encoder.copyBufferToBuffer(source.gpuBuffer, source.gpuOffset + offset, staging, 0, size);
+            device.queue.submit([encoder.finish()]);
+            await staging.mapAsync(GPUMapMode.READ);
+            const result = staging.getMappedRange().slice(0);
+            staging.unmap();
+            return result;
+        } finally { staging.destroy(); }
+    }
     public flushCommands (cmdBuffs: CommandBuffer[]): void {
         // noop
     }
@@ -497,6 +519,10 @@ export class WebGPUDevice extends Device {
                 // Must be changed, default support for 16 is not enough
                 maxVertexAttributes: maxVertAttrs,
                 maxSampledTexturesPerShaderStage: maxSampledTexPerShaderStage,
+                // Large storage buffers must be enabled explicitly. Request only
+                // adapter-supported sizes; this does not allocate buffer memory.
+                maxBufferSize: this._adapter.limits.maxBufferSize,
+                maxStorageBufferBindingSize: this._adapter.limits.maxStorageBufferBindingSize,
             },
             requiredFeatures: submitFeatures,
         });
@@ -552,9 +578,10 @@ export class WebGPUDevice extends Device {
         this._caps.max3DTextureSize = limits.maxTextureDimension3D;
         this._caps.uboOffsetAlignment  = limits.minUniformBufferOffsetAlignment;
 
-        // Compute limits are read from the device (not the adapter): no elevated
-        // compute limits are requested, so these are the values validation enforces.
+        // Report enabled device limits, which are the values validation enforces.
         const deviceLimits = device.limits;
+        this._caps.maxBufferSize = deviceLimits.maxBufferSize;
+        this._caps.maxShaderStorageBlockSize = deviceLimits.maxStorageBufferBindingSize;
         this._caps.maxComputeSharedMemorySize = deviceLimits.maxComputeWorkgroupStorageSize;
         this._caps.maxComputeWorkGroupInvocations = deviceLimits.maxComputeInvocationsPerWorkgroup;
         this._caps.maxComputeWorkGroupSize = new Size(

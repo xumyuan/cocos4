@@ -27,6 +27,8 @@ import { IWebGPUGPUPipelineLayout, IWebGPUGPUDescriptorSetLayout } from './webgp
 import { WebGPUDescriptorSetLayout } from './webgpu-descriptor-set-layout';
 import { PipelineLayoutInfo } from '../base/define';
 import { WebGPUDeviceManager } from './define';
+import type { IWebGPUGPUShader } from './webgpu-gpu-objects';
+import { getShaderLayoutEntries, WebGPUShaderPipelineLayout } from './webgpu-shader-layout';
 
 export class WebGPUPipelineLayout extends PipelineLayout {
     get gpuPipelineLayout (): IWebGPUGPUPipelineLayout | null { return this._gpuPipelineLayout!; }
@@ -34,6 +36,31 @@ export class WebGPUPipelineLayout extends PipelineLayout {
     private _gpuPipelineLayout: IWebGPUGPUPipelineLayout | null = null;
     private _nativePipelineLayout!: GPUPipelineLayout;
     private _bindGrpLayouts: GPUBindGroupLayout[] = [];
+    private readonly _shaderLayouts = new Map<IWebGPUGPUShader, WebGPUShaderPipelineLayout>();
+    private readonly _layoutsBySignature = new Map<string, WebGPUShaderPipelineLayout>();
+
+    public getShaderLayout (shader: IWebGPUGPUShader): WebGPUShaderPipelineLayout {
+        const cached = this._shaderLayouts.get(shader);
+        if (cached) return cached;
+        const templates = this._setLayouts.map((layout) => (layout as WebGPUDescriptorSetLayout).gpuDescriptorSetLayout!.entries);
+        const entries = getShaderLayoutEntries(shader, templates);
+        const signature = JSON.stringify(entries);
+        const existing = this._layoutsBySignature.get(signature);
+        if (existing) {
+            this._shaderLayouts.set(shader, existing);
+            return existing;
+        }
+        const device = WebGPUDeviceManager.instance.nativeDevice!;
+        const sets = entries.map((setEntries) => ({
+            layout: device.createBindGroupLayout({ entries: setEntries }),
+            entries: setEntries,
+            dynamicBindings: setEntries.filter((entry) => entry.buffer?.hasDynamicOffset).map((entry) => entry.binding),
+        }));
+        const result = { layout: device.createPipelineLayout({ bindGroupLayouts: sets.map((set) => set.layout) }), sets };
+        this._layoutsBySignature.set(signature, result);
+        this._shaderLayouts.set(shader, result);
+        return result;
+    }
 
     public fetchPipelineLayout (resetAll: boolean = true): GPUPipelineLayout {
         const gpuPipelineLayout = this._gpuPipelineLayout!;
@@ -47,7 +74,7 @@ export class WebGPUPipelineLayout extends PipelineLayout {
         const setLayoutSize = this._setLayouts.length;
         for (let i = 0; i < setLayoutSize; i++) {
             const setLayout = this._setLayouts[i] as WebGPUDescriptorSetLayout;
-            const bindGroupLayout = setLayout.gpuDescriptorSetLayout!.bindGroupLayout;
+            const bindGroupLayout = setLayout.getNativeLayout();
             if (bindGroupLayout) {
                 if (resetAll) {
                     const dynamicBindings = setLayout.gpuDescriptorSetLayout!.dynamicBindings;
@@ -90,19 +117,22 @@ export class WebGPUPipelineLayout extends PipelineLayout {
             // In order to avoid binding exceeding the number specified by webgpu,
             // gpulayout changes dynamically instead of binding everything at once.
             get nativePipelineLayout (): GPUPipelineLayout {
-                return that._nativePipelineLayout;
+                return that._nativePipelineLayout || that.fetchPipelineLayout();
             },
 
         };
-        this.fetchPipelineLayout();
         return true;
     }
 
     public changeSetLayout (idx: number, setLayout: WebGPUDescriptorSetLayout): void {
         this._setLayouts[idx] = setLayout;
+        this._shaderLayouts.clear();
+        this._layoutsBySignature.clear();
     }
 
     public destroy (): void {
         this._setLayouts.length = 0;
+        this._shaderLayouts.clear();
+        this._layoutsBySignature.clear();
     }
 }

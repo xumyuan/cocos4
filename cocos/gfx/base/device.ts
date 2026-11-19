@@ -366,6 +366,11 @@ export abstract class Device {
      */
     public abstract copyTextureToBuffers (texture: Readonly<Texture>, buffers: ArrayBufferView[], regions: Readonly<BufferTextureCopy[]>): void;
 
+    /** Explicit asynchronous diagnostics; never required to submit a draw. Byte ranges must be 4-byte aligned. */
+    public readBuffer (buffer: Buffer, offset = 0, size = buffer.size - offset): Promise<ArrayBuffer> {
+        return Promise.reject(new Error('Asynchronous buffer readback is not supported by this backend.'));
+    }
+
     /**
      * @en Copy texture images to texture.
      * @zh 拷贝图像到纹理。

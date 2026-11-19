@@ -108,18 +108,24 @@ export class WebGPUDescriptorSetLayout extends DescriptorSetLayout {
                 ),
             );
         });
-        const device = gfxDevice.nativeDevice!;
-        const groupLayout = device.createBindGroupLayout({
-            entries: bindGrpLayoutEntries,
-        });
         this._gpuDescriptorSetLayout = {
             bindings: this._bindings,
             dynamicBindings,
             descriptorIndices,
             descriptorCount,
             entries: bindGrpLayoutEntries,
-            bindGroupLayout: groupLayout,
+            // A shared GFX template is a superset, not a native shader layout.
+            bindGroupLayout: null!,
         };
+    }
+
+    /** Explicit legacy request; normal rendering uses a shader-specific native layout. */
+    public getNativeLayout (): GPUBindGroupLayout {
+        const layout = this._gpuDescriptorSetLayout!;
+        if (!layout.bindGroupLayout) {
+            layout.bindGroupLayout = WebGPUDeviceManager.instance.nativeDevice!.createBindGroupLayout({ entries: layout.entries });
+        }
+        return layout.bindGroupLayout;
     }
 
     public clear (): void {

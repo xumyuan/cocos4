@@ -38,6 +38,7 @@ import {
     WebGPUBlendMask,
 } from './webgpu-commands';
 import { WebGPUDeviceManager } from './define';
+import type { WebGPUShaderPipelineLayout } from './webgpu-shader-layout';
 
 const WebPUPrimitives: GPUPrimitiveTopology[] = [
     'point-list',
@@ -63,6 +64,9 @@ export class WebGPUPipelineState extends PipelineState {
 
     private _gpuPipelineState: IWebGPUGPUPipelineState | null = null;
     private _locations: Map<string, number> = new Map<string, number>();
+    private _resourceLayout!: WebGPUShaderPipelineLayout;
+
+    public get resourceLayout (): WebGPUShaderPipelineLayout { return this._resourceLayout; }
     public initialize (info: Readonly<PipelineStateInfo>): void {
         this._primitive = info.primitive;
         this._shader = info.shader;
@@ -83,6 +87,7 @@ export class WebGPUPipelineState extends PipelineState {
 
         const gpuShader = info.shader as WebGPUShader;
         const pipelineLayoutObj = info.pipelineLayout as WebGPUPipelineLayout;
+        this._resourceLayout = pipelineLayoutObj.getShaderLayout(gpuShader.gpuShader);
         const shaderStages = gpuShader.gpuShader.gpuStages;
 
         if (info.bindPoint === PipelineBindPoint.COMPUTE) {
@@ -96,7 +101,7 @@ export class WebGPUPipelineState extends PipelineState {
             }
 
             const computeDesc: GPUComputePipelineDescriptor = {
-                layout: pipelineLayoutObj.gpuPipelineLayout!.nativePipelineLayout,
+                layout: this._resourceLayout.layout,
                 compute: computeStage!,
             };
 
@@ -157,7 +162,7 @@ export class WebGPUPipelineState extends PipelineState {
             }
             const stripTopology = (info.primitive === PrimitiveMode.LINE_STRIP || info.primitive === PrimitiveMode.TRIANGLE_STRIP);
             const renderPplDesc: GPURenderPipelineDescriptor = {
-                layout: pipelineLayoutObj.gpuPipelineLayout!.nativePipelineLayout,
+                layout: this._resourceLayout.layout,
                 vertex: {
                     module: vertexStage!.module,
                     entryPoint: 'main',
@@ -239,7 +244,8 @@ export class WebGPUPipelineState extends PipelineState {
 
     public updatePipelineLayout (): void {
         if (this._gpuPipelineState && this._gpuPipelineState.pipelineState) {
-            this._gpuPipelineState.pipelineState.layout = (this._pipelineLayout as WebGPUPipelineLayout).gpuPipelineLayout!.nativePipelineLayout;
+            this._resourceLayout = (this._pipelineLayout as WebGPUPipelineLayout).getShaderLayout((this.shader as WebGPUShader).gpuShader);
+            this._gpuPipelineState.pipelineState.layout = this._resourceLayout.layout;
         }
     }
 

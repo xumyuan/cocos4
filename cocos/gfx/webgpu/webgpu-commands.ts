@@ -23,7 +23,7 @@
 */
 
 import { CachedArray } from '../../core/memop/cached-array';
-import { BufferSource, DrawInfo, IndirectBuffer, Texture } from '..';
+import { BufferSource, DrawInfo, Texture } from '..';
 import {
     BufferUsageBit,
     ColorMask,
@@ -633,10 +633,12 @@ export function WebGPUCmdFuncUpdateBuffer (
     offset: number,
     size: number,
 ): void {
-    if (gpuBuffer.usage & BufferUsageBit.INDIRECT) {
+    if ((gpuBuffer.usage & BufferUsageBit.INDIRECT) && 'drawInfos' in buffer) {
         gpuBuffer.indirects.length = offset;
-        Array.prototype.push.apply(gpuBuffer.indirects, (buffer as IndirectBuffer).drawInfos);
+        Array.prototype.push.apply(gpuBuffer.indirects, buffer.drawInfos);
     } else {
+        // GPU-produced argument buffers use raw bytes, not the legacy CPU DrawInfo list.
+        if (gpuBuffer.usage & BufferUsageBit.INDIRECT) gpuBuffer.indirects.length = 0;
         const nativeDevice: GPUDevice = device.nativeDevice!;
         let buff = buffer as ArrayBuffer;
         let rawBuffer: ArrayBuffer;

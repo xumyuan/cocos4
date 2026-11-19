@@ -36,7 +36,7 @@ import {
     StencilFace,
     CommandBufferType,
     CommandBufferInfo,
-    BufferTextureCopy, Color, Rect, Viewport, DrawInfo, Filter, TextureBlit,
+    BufferTextureCopy, Color, Rect, Viewport, DrawInfo, DispatchInfo, Filter, TextureBlit,
 } from './define';
 import { GeneralBarrier } from './states/general-barrier';
 import { TextureBarrier } from './states/texture-barrier';
@@ -243,6 +243,26 @@ export abstract class CommandBuffer extends GFXObject {
      * @param infoOrAssembler The draw call information.
      */
     public abstract draw (infoOrAssembler: Readonly<DrawInfo> | Readonly<InputAssembler>): void;
+
+    /**
+     * Draw from a GPU argument buffer using the currently bound pipeline and input assembler.
+     * Offsets and strides are bytes. Non-indexed commands contain 4 u32 values (16 bytes);
+     * indexed commands contain 5 values (20 bytes), with a signed baseVertex at byte 12.
+     * The CPU supplies command count, not the GPU-generated instance count.
+     */
+    public drawIndirect (buffer: Buffer, offset = 0, indexed = false, drawCount = 1, stride = indexed ? 20 : 16): void {
+        throw new Error('GPU indirect drawing is not supported by this backend.');
+    }
+
+    /** Record a compute dispatch. Check backend capabilities before use. */
+    public dispatch (info: DispatchInfo): void {
+        throw new Error('Compute dispatch is not supported by this backend.');
+    }
+
+    /** Submit recorded compute work before commands which consume its output. */
+    public submitComputePass (): void {
+        throw new Error('Compute pass submission is not supported by this backend.');
+    }
 
     /**
      * @en Update buffer.
