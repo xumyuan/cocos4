@@ -1,0 +1,35 @@
+// Copyright (c) 2026 Xiamen Yaji Software Co., Ltd.
+
+CCEffect %{
+  editor:
+    hide: true
+  techniques:
+  - passes:
+    - compute: particle-compute/simulation/initialize
+      pass: particle-compute-simulation
+      phase: initialize
+    - compute: particle-compute/simulation/prepare
+      pass: particle-compute-simulation
+      phase: prepare
+    - compute: particle-compute/simulation/spawn
+      pass: particle-compute-simulation
+      phase: spawn
+    - compute: particle-compute/simulation/update
+      pass: particle-compute-simulation
+      phase: update
+    - compute: particle-compute/simulation/scan
+      pass: particle-compute-simulation
+      phase: scan
+    - compute: particle-compute/simulation/scan-sums
+      pass: particle-compute-simulation
+      phase: scan-sums
+    - compute: particle-compute/simulation/scan-add
+      pass: particle-compute-simulation
+      phase: scan-add
+    - compute: particle-compute/simulation/scatter
+      pass: particle-compute-simulation
+      phase: scatter
+    - compute: particle-compute/simulation/finalize
+      pass: particle-compute-simulation
+      phase: finalize
+}%

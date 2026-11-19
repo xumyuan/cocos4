@@ -1,0 +1,32 @@
+// Copyright (c) 2026 Xiamen Yaji Software Co., Ltd.
+precision highp float;
+#include <particle-compute/simulation/declarations>
+#include <particle-compute/common/modules>
+#include <particle-compute/common/birth>
+
+void main() {
+    uint i = ccParticleInvocationIndex();
+    if (i >= control[1]) return;
+    uint lo = 0u;
+    uint hi = counts.z;
+    while (lo < hi) {
+        uint mid = (lo + hi) >> 1u;
+        if (i < birthWords[mid * 4u + 1u]) {
+            hi = mid;
+        } else {
+            lo = mid + 1u;
+        }
+    }
+    if (lo >= counts.z || i < birthWords[lo * 4u]) return;
+    uint handle = control[scratch.w + control[8] - 1u - i];
+    uint generation = control[identityOffsets.x + handle] + 1u;
+    control[identityOffsets.x + handle] = generation;
+    uint key = birthHash((control[7] + i + floatBitsToUint(clockInfo.z)) ^ floatBitsToUint(clockInfo.w));
+    ParticleState p = ccSpawnParticle(birthWords[lo * 4u + 2u], key, handle, generation,
+                                      uintBitsToFloat(control[identityOffsets.z + lo]));
+    // CPU Particle.reset does not clear startRow; retain it across pooled reuse
+    // when Texture initialization is disabled, including clear/restart.
+    if ((uint(ccParam(0u)) & 64u) == 0u) p.startSize.w = uintBitsToFloat(control[identityOffsets.w + handle]);
+    control[identityOffsets.w + handle] = floatBitsToUint(p.startSize.w);
+    inputState[control[0] + i] = p;
+}

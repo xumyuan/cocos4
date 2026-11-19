@@ -1,0 +1,20 @@
+// Copyright (c) 2026 Xiamen Yaji Software Co., Ltd.
+precision highp float;
+#include <particle-compute/simulation/declarations>
+
+void main() {
+    uint i = ccParticleInvocationIndex();
+    if (i >= counts.x) return;
+    control[scratch.w + i] = i;
+    control[identityOffsets.x + i] = 0u;
+    control[identityOffsets.y + i] = 0xffffffffu;
+    if (clockInfo.y < 0.5) control[identityOffsets.w + i] = 0u;
+    if (i == 0u) {
+        uint arc = control[10], last = control[11];
+        for (uint j = 0u; j < 16u; j++)
+            control[j] = 0u;
+        control[4] = counts.x;
+        control[10] = clockInfo.y > 0.5 ? arc : 0u;
+        control[11] = clockInfo.y > 0.5 ? last : floatBitsToUint(clockInfo.w);
+    }
+}

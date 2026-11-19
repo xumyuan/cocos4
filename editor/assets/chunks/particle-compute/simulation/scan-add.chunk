@@ -1,0 +1,11 @@
+// Copyright (c) 2026 Xiamen Yaji Software Co., Ltd.
+precision highp float;
+#include <particle-compute/simulation/declarations>
+
+void main() {
+    uint i = ccParticleInvocationIndex();
+    if (i >= scanParams.x) return;
+    uint offset = scanParams.y;
+    uint parentOffset = scanParams.z;
+    control[offset + i] += control[parentOffset + i / 64u];
+}

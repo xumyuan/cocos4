@@ -1,0 +1,10 @@
+// Copyright (c) 2026 Xiamen Yaji Software Co., Ltd.
+precision highp float;
+#include <particle-compute/simulation/declarations>
+
+void main() {
+    if (ccParticleInvocationIndex() != 0u) return;
+    control[4] = control[9] + control[2] - control[3];
+    control[7] += control[1];
+    control[0] = control[3];
+}

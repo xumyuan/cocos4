@@ -1,0 +1,17 @@
+// Copyright (c) 2026 Xiamen Yaji Software Co., Ltd.
+precision highp float;
+#include <particle-compute/simulation/declarations>
+
+void main() {
+    uint i = ccParticleInvocationIndex();
+    if (i >= control[2]) return;
+    uint prefix = control[scratch.y + i] + control[scratch.z + ccParticleGroupIndex()];
+    ParticleState p = inputState[i];
+    if (control[scratch.x + i] != 0u) {
+        outputState[prefix] = p;
+        control[identityOffsets.y + p.identity.y] = prefix;
+    } else {
+        control[scratch.w + control[9] + i - prefix] = p.identity.y;
+        control[identityOffsets.y + p.identity.y] = 0xffffffffu;
+    }
+}

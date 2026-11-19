@@ -1,0 +1,154 @@
+// Copyright (c) 2026 Xiamen Yaji Software Co., Ltd.
+// RealCurve/CurveRange ABI: spline = [keys, count, pre, post]; key stride = 9.
+float ccBounceOut(float k) {
+    if (k < 1.0 / 2.75) return 7.5625 * k * k;
+    if (k < 2.0 / 2.75) {
+        k -= 1.5 / 2.75;
+        return 7.5625 * k * k + 0.75;
+    }
+    if (k < 2.5 / 2.75) {
+        k -= 2.25 / 2.75;
+        return 7.5625 * k * k + 0.9375;
+    }
+    k -= 2.625 / 2.75;
+    return 7.5625 * k * k + 0.984375;
+}
+float ccEaseIn(uint family, float k) {
+    if (family < 4u) {
+        float v = k * k;
+        for (uint i = 0u; i < family; ++i)
+            v *= k;
+        return v;
+    }
+    if (family == 4u) return k == 1.0 ? 1.0 : 1.0 - cos(k * 1.5707963267948966);
+    if (family == 5u) return k == 0.0 ? 0.0 : pow(1024.0, k - 1.0);
+    if (family == 6u) return 1.0 - sqrt(max(0.0, 1.0 - k * k));
+    if (family == 7u) {
+        if (k == 0.0 || k == 1.0) return k;
+        k -= 1.0;
+        return -pow(2.0, 10.0 * k) * sin((k - 0.1) * 15.707963267948966);
+    }
+    if (family == 8u) return k == 1.0 ? 1.0 : k * k * (2.70158 * k - 1.70158);
+    return 1.0 - ccBounceOut(1.0 - k);
+}
+float ccEasing(uint method, float k) {
+    if (method == 0u) return k;
+    if (method == 1u) return 0.0;
+    if (method >= 42u) {
+        k = clamp(k, 0.0, 1.0);
+        return method == 42u ? k * k * (3.0 - 2.0 * k) : k * k * k * (k * (k * 6.0 - 15.0) + 10.0);
+    }
+    uint family = (method - 2u) / 4u;
+    uint direction = (method - 2u) % 4u;
+    if (direction == 2u && family == 8u) {
+        float s = 1.70158 * 1.525;
+        k *= 2.0;
+        if (k < 1.0) return 0.5 * k * k * ((s + 1.0) * k - s);
+        k -= 2.0;
+        return 0.5 * (k * k * ((s + 1.0) * k + s) + 2.0);
+    }
+    bool split = direction >= 2u;
+    bool firstHalf = k < 0.5;
+    float sub = split ? (firstHalf ? k * 2.0 : k * 2.0 - 1.0) : k;
+    bool invert = direction == 1u || (direction == 2u && !firstHalf) || (direction == 3u && firstHalf);
+    float arg = invert ? 1.0 - sub : sub;
+    float eased = ccEaseIn(family, arg);
+    if (invert) {
+        eased = 1.0 - eased;
+    }
+    if (!split) return eased;
+    return eased * 0.5 + (firstHalf ? 0.0 : 0.5);
+}
+float ccBezier(float a, float b, float c, float d, float t) {
+    float u = 1.0 - t;
+    return u * u * u * a + 3.0 * u * u * t * b + 3.0 * u * t * t * c + t * t * t * d;
+}
+float ccCbrt(float v) {
+    return sign(v) * pow(abs(v), 1.0 / 3.0);
+}
+// Matches solveCubic and getParamFromCubicSolution, including repeated-root handling.
+float ccWeightedParameter(float x1, float x2, float ratio) {
+    float c1 = 3.0 * x1, c2 = 3.0 * x2 - 6.0 * x1, c3 = 3.0 * (x1 - x2) + 1.0;
+    float a = c2 / c3, b = c1 / c3, c = -ratio / c3;
+    float p = (-a * a / 3.0 + b) / 3.0, q = (2.0 * a * a * a / 27.0 - a * b / 3.0 + c) / 2.0;
+    float p3 = p * p * p, d = q * q + p3;
+    vec3 roots = vec3(0.0);
+    int count = 1;
+    if (abs(d) < 1e-9) {
+        if (abs(q) < 1e-9)
+            roots.x = 0.0;
+        else {
+            float u = ccCbrt(-q);
+            roots.xy = vec2(2.0 * u, -u);
+            count = 2;
+        }
+    } else {
+        if (d < 0.0) {
+            float phi = acos(clamp(-q / sqrt(-p3), -1.0, 1.0)) / 3.0, t = 2.0 * sqrt(-p);
+            roots = vec3(t * cos(phi), -t * cos(phi + 1.0471975511965976), -t * cos(phi - 1.0471975511965976));
+            count = 3;
+        } else {
+            float sd = sqrt(d);
+            roots.x = ccCbrt(sd - q) - ccCbrt(sd + q);
+        }
+        roots -= vec3(a / 3.0);
+    }
+    if (count == 1) return roots.x;
+    float result = 0.0;
+    if (roots.x >= 0.0 && roots.x <= 1.0) {
+        result = max(result, roots.x);
+    }
+    if (roots.y >= 0.0 && roots.y <= 1.0) {
+        result = max(result, roots.y);
+    }
+    if (count == 3 && roots.z >= 0.0 && roots.z <= 1.0) {
+        result = max(result, roots.z);
+    }
+    return result;
+}
+float ccRealCurve(uint descriptor, float time) {
+    uint keys = uint(ccParam(descriptor)), count = uint(ccParam(descriptor + 1u));
+    if (count == 0u) return 0.0;
+    uint last = keys + (count - 1u) * 9u;
+    float firstTime = ccParam(keys), lastTime = ccParam(last);
+    if (time < firstTime || time > lastTime) {
+        bool before = time < firstTime;
+        uint mode = uint(ccParam(descriptor + (before ? 2u : 3u))), endKey = before ? keys : last;
+        if (count < 2u || mode == 1u || mode > 3u) return ccParam(endKey + 1u);
+        if (mode == 0u) {
+            uint other = before ? keys + 9u : last - 9u;
+            return ccParam(endKey + 1u) + (time - ccParam(endKey)) * (ccParam(other + 1u) - ccParam(endKey + 1u)) /
+                                              (ccParam(other) - ccParam(endKey));
+        }
+        float duration = lastTime - firstTime;
+        float t = mod(time - firstTime, mode == 2u ? duration : 2.0 * duration);
+        time = firstTime + (mode == 2u ? t : duration - abs(t - duration));
+    }
+    int lo = 0, hi = int(count) - 1;
+    while (lo <= hi) {
+        int mid = (lo + hi) / 2;
+        uint key = keys + uint(mid) * 9u;
+        float t = ccParam(key);
+        if (t > time + 1e-6)
+            hi = mid - 1;
+        else if (t < time - 1e-6)
+            lo = mid + 1;
+        else
+            return ccParam(key + 1u);
+    }
+    uint a = keys + uint(lo - 1) * 9u, b = a + 9u;
+    float dt = ccParam(b) - ccParam(a), ratio = (time - ccParam(a)) / dt;
+    float v0 = ccParam(a + 1u), v1 = ccParam(b + 1u);
+    uint mode = uint(ccParam(a + 2u));
+    if (mode == 0u) return mix(v0, v1, ccEasing(uint(ccParam(a + 3u)), ratio));
+    if (mode != 2u) return v0;
+    float tangent0 = ccParam(a + 5u), tangent1 = ccParam(b + 4u);
+    bool weighted0 = (uint(ccParam(a + 8u)) & 2u) != 0u, weighted1 = (uint(ccParam(b + 8u)) & 1u) != 0u;
+    if (!weighted0 && !weighted1) return ccBezier(v0, v0 + tangent0 * dt / 3.0, v1 - tangent1 * dt / 3.0, v1, ratio);
+    float w0 = weighted0 ? ccParam(a + 7u) : sqrt(dt * dt + (dt * tangent0) * (dt * tangent0)) / 3.0;
+    float w1 = weighted1 ? ccParam(b + 6u) : sqrt(dt * dt + (dt * tangent1) * (dt * tangent1)) / 3.0;
+    float angle0 = atan(tangent0), angle1 = atan(tangent1);
+    float x1 = (cos(angle0) * w0 + ccParam(a) - ccParam(a)) / dt;
+    float x2 = (-cos(angle1) * w1 + ccParam(b) - ccParam(a)) / dt;
+    return ccBezier(v0, sin(angle0) * w0 + v0, -sin(angle1) * w1 + v1, v1, ccWeightedParameter(x1, x2, ratio));
+}

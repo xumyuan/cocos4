@@ -1,0 +1,101 @@
+// Copyright (c) 2026 Xiamen Yaji Software Co., Ltd.
+precision highp float;
+#define CC_TRAIL_USE_CURVES 1
+#include <particle-compute/trail/declarations>
+
+void main() {
+    uint h = ccParticleInvocationIndex();
+    if (h >= limits.x) return;
+    uint m = metaBase(h), index = control[mapBase() + h];
+    control[m + 4u] = 0u;
+    if (index == 0xffffffffu) {
+        // CPU removeParticle immediately releases history when the particle dies.
+        control[m + 1u] = 0u;
+        control[m + 2u] = 0u;
+        control[m + 3u] = 0u;
+        return;
+    }
+    ParticleState p = particles[index];
+    if (control[m] != p.identity.z) {
+        control[m] = p.identity.z;
+        control[m + 1u] = 0u;
+        control[m + 2u] = 0u;
+        control[m + 3u] = 0u;
+    }
+    uint phase = control[m + 1u];
+    // CPU loopCount/lastLoop/trailDelay: three returns, then allocation also returns.
+    if (phase < 4u) {
+        control[m + 1u] = phase + 1u;
+        return;
+    }
+    uint head = control[m + 2u], count = control[m + 3u];
+    vec3 position = trailPosition(p);
+    bool appendPoint = true;
+    if (count > 0u) {
+        vec3 lastPosition = points[pointAt(h, head, count - 1u)].positionAge.xyz;
+        float age = p.velocityLife.w != 0.0 ? 1.0 - p.positionLife.w / p.velocityLife.w : 0.0;
+        uint expired = 0u;
+        for (uint j = 0u; j < count; ++j) {
+            uint at = pointAt(h, head, j);
+            TrailPoint point = points[at];
+            vec4 tint = ccColor(1u, age, 1.0, ccParticleRandomPair(p.identity.x ^ (at * 0x9e3779b9u) ^ uint(tick.w)));
+            if (ccParam(4u) != 0.0) tint = ccByteColor(p.color * tint);
+            point.positionAge.w += tick.x;
+            point.tangentWidth.w = pointWidth(p, point.positionAge.w);
+            point.colorDirection.x = packColor(tint);
+            points[at] = point;
+            if (point.positionAge.w > tick.y) ++expired;
+        }
+        head = (head + expired) % limits.y;
+        count -= expired;
+        // CPU compares the last sampled position even when its point expired above.
+        vec3 delta = lastPosition - position;
+        appendPoint = dot(delta, delta) >= ccParam(5u);
+    }
+    if (appendPoint) {
+        if (count == limits.y) {
+            // Explicit history budget: drop oldest and report overflow, never overrun buffers.
+            head = (head + 1u) % limits.y;
+            --count;
+            atomicAdd(control[5], 1u);
+        }
+        uint at = pointAt(h, head, count);
+        TrailPoint point;
+        point.positionAge = vec4(position, 0.0);
+        point.tangentWidth = vec4(0.0, 0.0, 0.0, pointWidth(p, 0.0));
+        vec4 tint =
+            ccParam(4u) != 0.0 ? p.color : ccColor(1u, 0.0, 1.0, ccParticleRandomPair(p.identity.x ^ uint(tick.w)));
+        point.colorDirection = uvec4(packColor(tint), 0u, 0u, 0u);
+        points[at] = point;
+        ++count;
+        if (count == 2u) {
+            uint previous = pointAt(h, head, count - 2u);
+            points[previous].tangentWidth.xyz = position - points[previous].positionAge.xyz;
+        } else if (count > 2u) {
+            uint previous = pointAt(h, head, count - 2u), third = pointAt(h, head, count - 3u);
+            vec3 back = points[third].positionAge.xyz - points[previous].positionAge.xyz;
+            vec3 forward = position - points[previous].positionAge.xyz;
+            vec3 tangent = forward - back;
+            if (nearZero(tangent)) tangent = back;
+            tangent = safeNormalize(tangent);
+            points[previous].tangentWidth.xyz = tangent;
+            points[previous].colorDirection.y = reverseDirection(tangent, points[third]);
+        }
+    }
+    control[m + 2u] = head;
+    control[m + 3u] = count;
+    if (count == 0u) return;
+    uint last = pointAt(h, head, count - 1u);
+    vec3 tipTangent = position - points[last].positionAge.xyz;
+    if (count <= 2u)
+        points[last].tangentWidth.xyz = tipTangent;
+    else {
+        uint previous = pointAt(h, head, count - 2u);
+        vec3 back = safeNormalize(points[previous].positionAge.xyz - points[last].positionAge.xyz);
+        points[last].tangentWidth.xyz = safeNormalize(safeNormalize(tipTangent) - back);
+        points[last].colorDirection.y = reverseDirection(points[last].tangentWidth.xyz, points[previous]);
+        tipTangent = safeNormalize(tipTangent);
+    }
+    uint edges = nearZero(tipTangent) ? count - 1u : count;
+    control[m + 4u] = edges * 6u;
+}

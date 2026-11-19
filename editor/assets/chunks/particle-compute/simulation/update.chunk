@@ -1,0 +1,26 @@
+// Copyright (c) 2026 Xiamen Yaji Software Co., Ltd.
+precision highp float;
+#include <particle-compute/simulation/declarations>
+#include <particle-compute/common/modules>
+
+void main() {
+    uint i = ccParticleInvocationIndex();
+    if (i >= counts.x) return;
+    uint alive = 0u;
+    if (i < control[2]) {
+        ParticleState p = inputState[i];
+        // Compensated subtraction limits lifetime drift against the CPU's f64 accumulator.
+        // size.w is simulation-only; all size modules and renderers use size.xyz.
+        float decrement = -gravityDt.w - p.size.w;
+        float remaining = p.positionLife.w + decrement;
+        p.size.w = (remaining - p.positionLife.w) - decrement;
+        p.positionLife.w = remaining;
+        if (p.positionLife.w >= 0.0) {
+            ccApplyParticleModules(p, gravityDt.w, clockInfo.x, uint(clockInfo.y), gravityDt.xyz);
+            p.positionLife.xyz += p.renderVelocity.xyz * gravityDt.w;
+            inputState[i] = p;
+            alive = 1u;
+        }
+    }
+    control[scratch.x + i] = alive;
+}

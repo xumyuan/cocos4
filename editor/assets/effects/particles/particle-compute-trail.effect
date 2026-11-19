@@ -1,0 +1,29 @@
+// Copyright (c) 2026 Xiamen Yaji Software Co., Ltd.
+
+CCEffect %{
+  editor:
+    hide: true
+  techniques:
+  - passes:
+    - compute: particle-compute/trail/clear
+      pass: particle-compute-trail
+      phase: clear
+    - compute: particle-compute/trail/reset-map
+      pass: particle-compute-trail
+      phase: reset-map
+    - compute: particle-compute/trail/map-live
+      pass: particle-compute-trail
+      phase: map-live
+    - compute: particle-compute/trail/update-history
+      pass: particle-compute-trail
+      phase: update-history
+    - compute: particle-compute/trail/scan-counts
+      pass: particle-compute-trail
+      phase: scan-counts
+    - compute: particle-compute/trail/scan-sums
+      pass: particle-compute-trail
+      phase: scan-sums
+    - compute: particle-compute/trail/emit-geometry
+      pass: particle-compute-trail
+      phase: emit-geometry
+}%

@@ -1,0 +1,11 @@
+// Copyright (c) 2026 Xiamen Yaji Software Co., Ltd.
+
+CCEffect %{
+  editor:
+    hide: true
+  techniques:
+  - passes:
+    - compute: particle-compute/render/prepare
+      pass: particle-compute-render
+      phase: prepare
+}%

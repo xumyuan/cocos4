@@ -1,0 +1,7 @@
+// Copyright (c) 2026 Xiamen Yaji Software Co., Ltd.
+precision highp float;
+#include <particle-compute/trail/declarations>
+#define CC_SCAN_COUNT limits.z
+#define CC_SCAN_VALUES(block) control[8u+block]
+#define CC_SCAN_FINISH(total) control[0]=total; control[1]=1u; control[2]=0u; control[3]=0u; control[4]=0u
+#include <particle-compute/common/block-scan>

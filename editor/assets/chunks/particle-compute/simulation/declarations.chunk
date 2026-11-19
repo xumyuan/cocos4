@@ -1,0 +1,41 @@
+// Copyright (c) 2026 Xiamen Yaji Software Co., Ltd.
+layout(local_size_x = 64) in;
+#include <particle-compute/common/dispatch>
+
+#pragma rate FrameParams pass
+layout(std140) uniform FrameParams {
+    uvec4 counts;
+    vec4 gravityDt;
+    vec4 clockInfo;
+    uvec4 scratch;
+    uvec4 identityOffsets;
+    uvec4 scanParams;
+};
+#include <particle-compute/common/state>
+
+#pragma rate InputState pass
+layout(std430) buffer InputState {
+    ParticleState inputState[];
+};
+#pragma rate OutputState pass
+layout(std430) buffer OutputState {
+    ParticleState outputState[];
+};
+#pragma rate Control pass
+layout(std430) buffer Control {
+    uint control[];
+};
+#pragma rate BirthWords pass
+layout(std430) readonly buffer BirthWords {
+    uint birthWords[];
+};
+#pragma rate ModuleWords pass
+layout(std430) readonly buffer ModuleWords {
+    float moduleWords[];
+};
+float ccModuleData(uint index) {
+    return moduleWords[index];
+}
+float birthRead(uint base, uint offset) {
+    return uintBitsToFloat(birthWords[base + offset]);
+}

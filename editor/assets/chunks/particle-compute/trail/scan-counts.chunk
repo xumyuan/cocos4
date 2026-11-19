@@ -1,0 +1,21 @@
+// Copyright (c) 2026 Xiamen Yaji Software Co., Ltd.
+precision highp float;
+#include <particle-compute/trail/declarations>
+
+shared uint sums[64];
+void main() {
+    uint h = ccParticleInvocationIndex(), lane = gl_LocalInvocationID.x;
+    uint value = 0u;
+    if (h < limits.x) value = control[metaBase(h) + 4u];
+    sums[lane] = value;
+    barrier();
+    for (uint distance = 1u; distance < 64u; distance *= 2u) {
+        uint addend = 0u;
+        if (lane >= distance) addend = sums[lane - distance];
+        barrier();
+        sums[lane] += addend;
+        barrier();
+    }
+    if (h < limits.x) control[metaBase(h) + 5u] = sums[lane] - value;
+    if (lane == 63u && ccParticleGroupIndex() < limits.z) control[8u + ccParticleGroupIndex()] = sums[lane];
+}

@@ -1,0 +1,35 @@
+// Copyright (c) 2026 Xiamen Yaji Software Co., Ltd.
+precision highp float;
+#include <particle-compute/simulation/declarations>
+
+shared uint values[64];
+void main() {
+    uint i = ccParticleInvocationIndex();
+    uint lane = gl_LocalInvocationID.x;
+    uint group = ccParticleGroupIndex();
+    uint count = scanParams.x;
+    uint offset = scanParams.y;
+    uint parentOffset = scanParams.z;
+    uint groupCount = scanParams.w;
+    uint value = 0u;
+    if (i < count) {
+        value = control[offset + i];
+    }
+    values[lane] = value;
+    barrier();
+    for (uint step = 1u; step < 64u; step *= 2u) {
+        uint addend = 0u;
+        if (lane >= step) {
+            addend = values[lane - step];
+        }
+        barrier();
+        values[lane] += addend;
+        barrier();
+    }
+    if (i < count) {
+        control[offset + i] = values[lane] - value;
+    }
+    if (lane == 63u && group < groupCount) {
+        control[parentOffset + group] = values[63];
+    }
+}

@@ -1,0 +1,14 @@
+// Copyright (c) 2026 Xiamen Yaji Software Co., Ltd.
+struct ParticleState {
+    vec4 positionLife;   // position.xyz, remainingLifetime
+    vec4 velocityLife;   // persistent velocity.xyz, startLifetime
+    vec4 renderVelocity; // ultimateVelocity.xyz, frameIndex
+    vec4 startSize;      // startSize.xyz, startRow
+    vec4 size;
+    vec4 startColor;
+    vec4 color;
+    vec4 startRotation; // quaternion after render-mode filtering
+    vec4 deltaRotation; // accumulated quaternion (CPU localMat equivalent)
+    vec4 rotation;      // CPU rendering encoding: Euler or quat.xyz (+10 for negative w)
+    uvec4 identity;     // seed, stable handle, generation, flags (bit 0: rotation initialized)
+};

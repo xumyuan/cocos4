@@ -1,0 +1,10 @@
+// Copyright (c) 2026 Xiamen Yaji Software Co., Ltd.
+precision highp float;
+#include <particle-compute/trail/declarations>
+
+void main() {
+    uint i = ccParticleInvocationIndex();
+    if (i >= min(counters[0], limits.x)) return;
+    uint h = particles[i].identity.y;
+    if (h < limits.x) control[mapBase() + h] = i;
+}

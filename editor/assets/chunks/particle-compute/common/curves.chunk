@@ -1,0 +1,157 @@
+// Copyright (c) 2026 Xiamen Yaji Software Co., Ltd.
+float ccModuleData(uint index);
+float ccParam(uint offset) {
+    return ccModuleData(offset);
+}
+vec3 ccParam3(uint offset) {
+    return vec3(ccParam(offset), ccParam(offset + 1u), ccParam(offset + 2u));
+}
+vec4 ccParam4(uint offset) {
+    return vec4(ccParam(offset), ccParam(offset + 1u), ccParam(offset + 2u), ccParam(offset + 3u));
+}
+#pragma define-meta CC_PARTICLE_HAS_SPLINE
+#pragma define-meta CC_PARTICLE_HAS_GRADIENT
+#if CC_PARTICLE_HAS_SPLINE
+#include <particle-compute/common/real-curve>
+#endif
+float ccParticlePseudoRandom(uint seed) {
+    // Reduce first: CPU seeds + module offsets can exceed the 32-bit product range.
+    return float(((seed % 233280u) * 9301u + 49297u) % 233280u) / 233280.0;
+}
+uint ccParticleHash(uint value) {
+    value ^= value >> 16u;
+    value *= 0x7feb352du;
+    value ^= value >> 15u;
+    value *= 0x846ca68bu;
+    return value ^ (value >> 16u);
+}
+float ccParticleRandom(uint value) {
+    return float(ccParticleHash(value) >> 8u) / 16777216.0;
+}
+vec2 ccParticleRandomPair(uint seed) {
+    return vec2(ccParticleRandom(seed), ccParticleRandom(seed ^ 0x9e3779b9u));
+}
+float ccCurveAt(uint descriptor, float time, float randomRatio) {
+    uint a = uint(ccParam(descriptor));
+    uint b = uint(ccParam(descriptor + 1u));
+    if (ccParam(descriptor + 2u) < 0.0) {
+#if CC_PARTICLE_HAS_SPLINE
+        float low = 0.0;
+        float high = 0.0;
+        uint splineCount = a == b ? 1u : 2u;
+        for (uint side = 0u; side < splineCount; ++side) {
+            float sampleValue = ccRealCurve(side == 0u ? a : b, time);
+            if (side == 0u) {
+                low = sampleValue;
+                high = sampleValue;
+            } else {
+                high = sampleValue;
+            }
+        }
+        return mix(low, high, randomRatio) * ccParam(descriptor + 3u);
+#else
+        return 0.0;
+#endif
+    }
+    uint count = uint(ccParam(descriptor + 2u));
+    float at = clamp(time, 0.0, 1.0) * float(count - 1u);
+    uint lo = uint(floor(at));
+    uint hi = min(lo + 1u, count - 1u);
+    float low = mix(ccParam(a + lo), ccParam(a + hi), fract(at));
+    float high = mix(ccParam(b + lo), ccParam(b + hi), fract(at));
+    return mix(low, high, randomRatio);
+}
+float ccCurve(uint headerOffset, float time, float randomRatio) {
+    return ccCurveAt(uint(ccParam(headerOffset)), time, randomRatio);
+}
+vec4 ccByteColor(vec4 value) {
+    return roundEven(clamp(value, 0.0, 1.0) * 255.0) / 255.0;
+}
+#if CC_PARTICLE_HAS_GRADIENT
+vec4 ccGradient(uint descriptor, float time) {
+    uint colors = uint(ccParam(descriptor)), colorCount = uint(ccParam(descriptor + 1u));
+    uint alphas = uint(ccParam(descriptor + 2u)), alphaCount = uint(ccParam(descriptor + 3u));
+    bool fixedMode = ccParam(descriptor + 4u) != 0.0;
+    float t = mod(time, 1.000001);
+    vec3 rgb = vec3(1.0);
+    float alpha = 1.0;
+    if (colorCount == 1u)
+        rgb = ccParam3(colors + 1u);
+    else if (colorCount > 1u) {
+        uint last = colors + (colorCount - 1u) * 4u;
+        float firstTime = ccParam(colors), lastTime = ccParam(last);
+        if (abs(t - lastTime) <= 0.000001)
+            rgb = ccParam3(last + 1u);
+        else if (t < firstTime)
+            rgb = ccParam3(colors + 1u) * (t / firstTime);
+        else if (t > lastTime)
+            rgb = ccParam3(last + 1u) * (1.0 - (t - lastTime) / (1.0 - lastTime));
+        else
+            for (uint i = 1u; i < colorCount; ++i) {
+                uint previous = colors + (i - 1u) * 4u, current = colors + i * 4u;
+                float a = ccParam(previous), b = ccParam(current);
+                if (t >= a && t < b) {
+                    rgb = fixedMode ? ccParam3(current + 1u)
+                                    : mix(ccParam3(previous + 1u), ccParam3(current + 1u), (t - a) / (b - a));
+                    break;
+                }
+            }
+    }
+    if (alphaCount == 1u)
+        alpha = ccParam(alphas + 1u);
+    else if (alphaCount > 1u) {
+        uint last = alphas + (alphaCount - 1u) * 2u;
+        float firstTime = ccParam(alphas), lastTime = ccParam(last);
+        if (abs(t - lastTime) <= 0.000001)
+            alpha = ccParam(last + 1u);
+        else if (t < firstTime)
+            alpha = ccParam(alphas + 1u) * (t / firstTime);
+        else if (t > lastTime)
+            alpha = ccParam(last + 1u) * (1.0 - (t - lastTime) / (1.0 - lastTime));
+        else
+            for (uint i = 1u; i < alphaCount; ++i) {
+                uint previous = alphas + (i - 1u) * 2u, current = alphas + i * 2u;
+                float a = ccParam(previous), b = ccParam(current);
+                if (t >= a && t < b) {
+                    alpha = fixedMode ? ccParam(current + 1u)
+                                      : mix(ccParam(previous + 1u), ccParam(current + 1u), (t - a) / (b - a));
+                    break;
+                }
+            }
+    }
+    return ccByteColor(vec4(rgb, alpha));
+}
+#endif
+vec4 ccColor(uint headerOffset, float time, float ratio, vec2 randomValues) {
+    uint descriptor = uint(ccParam(headerOffset));
+    uint mode = uint(ccParam(descriptor));
+    uint first = uint(ccParam(descriptor + 1u));
+    uint second = uint(ccParam(descriptor + 2u));
+    if (mode == 0u) return ccParam4(first);
+    if (mode == 2u) return ccByteColor(mix(ccParam4(first), ccParam4(second), ratio));
+#if CC_PARTICLE_HAS_GRADIENT
+    if (mode == 4u) {
+        uint colors = uint(ccParam(first));
+        uint nc = uint(ccParam(first + 1u));
+        uint alphas = uint(ccParam(first + 2u));
+        uint na = uint(ccParam(first + 3u));
+        uint c = min(uint(randomValues.x * float(nc)), nc - 1u);
+        uint a = min(uint(randomValues.y * float(na)), na - 1u);
+        return ccByteColor(vec4(ccParam3(colors + c * 4u + 1u), ccParam(alphas + a * 2u + 1u)));
+    }
+    vec4 c0 = vec4(1.0);
+    vec4 c1 = vec4(1.0);
+    uint gradCount = mode == 3u ? 2u : 1u;
+    for (uint side = 0u; side < gradCount; ++side) {
+        vec4 sampled = ccGradient(side == 0u ? first : second, time);
+        if (side == 0u) {
+            c0 = sampled;
+        } else {
+            c1 = sampled;
+        }
+    }
+    return mode == 3u ? ccByteColor(mix(c0, c1, ratio)) : c0;
+#else
+    return vec4(1.0);
+#endif
+}
