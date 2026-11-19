@@ -131,7 +131,7 @@ exports.template = /* html*/`
             cache-expand="particle-system-colorOverLifetimeModule"></ui-section>
         <ui-section key="textureAnimationModule" autoflag="true"
             cache-expand="particle-system-textureAnimationModule"></ui-section>
-        <ui-section type="dump" showflag="!renderer.value.useGPU" key="limitVelocityOvertimeModule"
+        <ui-section id="limit-module" type="dump" key="limitVelocityOvertimeModule"
             cache-expand="particle-system-limitVelocityOvertimeModule">
             <ui-prop slot="header" no-label class="header" type="dump" key="limitVelocityOvertimeModule.value.enable"
                 labelflag="limitVelocityOvertimeModule" empty="true">
@@ -145,7 +145,7 @@ exports.template = /* html*/`
             <ui-prop type="dump" key="limitVelocityOvertimeModule.value.limitY"></ui-prop>
             <ui-prop type="dump" key="limitVelocityOvertimeModule.value.limitZ"></ui-prop>
         </ui-section>
-        <ui-section empty="true" showflag="!renderer.value.useGPU" key="trailModule"
+        <ui-section id="trail-module" empty="true" key="trailModule"
             cache-expand="particle-system-trailModule">
             <ui-prop slot="header" no-label class="header" type="dump" key="trailModule.value.enable" labelflag="trailModule"
                 empty="true">
@@ -167,6 +167,9 @@ exports.template = /* html*/`
                 <ui-label name style="white-space: nowrap;" value="Renderer"></ui-label>
                 <ui-label type style="white-space: nowrap;opacity: 0.55;margin-left: 4px;flex:auto;font-weight:normal;" value=": cc.ParticleSystemRenderer"></ui-label>
             </div>
+            <ui-prop id="simulation-backend" type="dump" key="renderer.value.simulationBackend" displayName="Simulation Backend"></ui-prop>
+            <ui-label id="compute-backend-tip" value="Compute GPU requires the particle-compute feature, WebGPU and the custom render pipeline in both the editor Scene and runtime. Compute uses CPU particle materials. Legacy assets retain Use GPU behavior."></ui-label>
+            <ui-prop id="compute-trail-points" type="dump" key="renderer.value.computeTrailMaxPoints" displayName="Compute Trail Max Points"></ui-prop>
             <ui-prop type="dump" key="renderer.value.renderMode"></ui-prop>
             <ui-prop type="dump" key="renderer.value.velocityScale"></ui-prop>
             <ui-prop type="dump" key="renderer.value.lengthScale"></ui-prop>
@@ -196,6 +199,44 @@ const excludeList = [
 ];
 
 exports.methods = {
+    getBackendState() {
+        const renderer = this.dump?.value?.renderer?.value || {};
+        const backend = renderer.simulationBackend;
+        const legacyGPU = renderer.useGPU;
+        const enumValue = (name, fallback) => backend?.enumList?.find(entry => entry.name === name)?.value ?? fallback;
+        const legacy = enumValue('Legacy', 3);
+        const cpu = enumValue('CPU', 0);
+        const analytic = enumValue('AnalyticGPU', 1);
+        const compute = enumValue('ComputeGPU', 2);
+        const values = backend?.values || [backend?.value ?? legacy];
+        const effective = values.map((value, index) => value === legacy
+            ? ((legacyGPU?.values?.[index] ?? legacyGPU?.value) ? analytic : cpu) : value);
+        return {
+            legacy: values.every(value => value === legacy),
+            analytic: effective.every(value => value === analytic),
+            compute: effective.some(value => value === compute),
+            mixed: effective.some(value => value !== effective[0]),
+            supportsCPUModules: effective.every(value => value === cpu || value === compute),
+        };
+    },
+
+    applyBackendState() {
+        const state = this.getBackendState();
+        this.$.useGPU.style.display = state.legacy ? '' : 'none';
+        this.$.computeBackendTip.style.display = state.compute ? '' : 'none';
+        this.$.computeTrailPoints.style.display = state.compute ? '' : 'none';
+        this.$.limitModule.style.display = state.supportsCPUModules ? '' : 'none';
+        this.$.trailModule.style.display = state.supportsCPUModules ? '' : 'none';
+        for (const [element, disabled] of [
+            [this.$.cpuMaterial, state.analytic || state.mixed],
+            [this.$.trailMaterial, !state.supportsCPUModules],
+            [this.$.gpuMaterial, !state.analytic || state.mixed],
+        ]) {
+            if (disabled) element.setAttribute('state-disabled', '');
+            else element.removeAttribute('state-disabled');
+        }
+    },
+
     getObjectByKey(target, key) {
         let params = [];
         if (typeof key === 'string') {
@@ -205,7 +246,7 @@ exports.methods = {
         }
         if (params.length > 0) {
             const value = params.shift();
-            return this.getObjectByKey(target[value], params);
+            return this.getObjectByKey(target?.[value], params);
         } else {
             return target;
         }
@@ -494,7 +535,9 @@ const uiElements = {
             this.$.baseProps.forEach((element) => {
                 const key = element.getAttribute('key');
                 const isEmpty = element.getAttribute('empty');
-                let isShow = !key || this.getObjectByKey(this.dump.value, key).visible;
+                const propertyDump = this.getObjectByKey(this.dump.value, key);
+                if (key && !propertyDump) { element.style.display = 'none'; return; }
+                let isShow = !key || propertyDump.visible;
                 const isHeader = element.getAttribute('slot') === 'header';
                 const displayName = element.getAttribute('displayName');
                 const dump = this.getObjectByKey(this.dump.value, key);
@@ -644,24 +687,12 @@ const uiElements = {
         },
     },
     useGPU: {
-        changeState(useGPU) {
-            if (useGPU) {
-                this.$.cpuMaterial.setAttribute('state-disabled', '');
-                this.$.trailMaterial.setAttribute('state-disabled', '');
-                this.$.gpuMaterial.removeAttribute('state-disabled');
-            } else {
-                this.$.cpuMaterial.removeAttribute('state-disabled');
-                this.$.trailMaterial.removeAttribute('state-disabled');
-                this.$.gpuMaterial.setAttribute('state-disabled', '');
-            }
-        },
         ready() {
-            this.$.useGPU.addEventListener('change', (event) => {
-                uiElements.useGPU.changeState(event.target.value);
-            });
+            this.$.useGPU.addEventListener('change-dump', () => this.applyBackendState());
+            this.$.simulationBackend.addEventListener('change-dump', () => this.applyBackendState());
         },
         update() {
-            uiElements.useGPU.changeState.call(this, this.dump.value.renderer.value.useGPU.value);
+            this.applyBackendState();
         },
     },
 };
@@ -672,6 +703,11 @@ exports.$ = {
     resetBounds: '#resetBounds',
     noisePreview: '#noisePreview',
     useGPU: '#use-gpu',
+    simulationBackend: '#simulation-backend',
+    computeBackendTip: '#compute-backend-tip',
+    computeTrailPoints: '#compute-trail-points',
+    limitModule: '#limit-module',
+    trailModule: '#trail-module',
     cpuMaterial: '.cpu-material',
     gpuMaterial: '.gpu-material',
     trailMaterial: '.trail-material',
@@ -694,6 +730,12 @@ exports.update = function(dump) {
     }
 };
 exports.style = /* css */`
+    #compute-backend-tip {
+        display: block;
+        white-space: normal;
+        opacity: 0.75;
+        margin: 4px 0 8px;
+    }
     .particle-system-component > .content > .indent {
         margin-left: calc(var(--ui-prop-margin-left) + 8px);
     }

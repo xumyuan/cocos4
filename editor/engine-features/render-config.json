@@ -148,6 +148,19 @@
             ],
             "enginePlugin": true
         },
+        "particle-compute": {
+            "default": false,
+            "label": "i18n:ENGINE.features.particle_compute.label",
+            "description": "i18n:ENGINE.features.particle_compute.description",
+            "category": "3d",
+            "dependencies": [
+                "particle",
+                "gfx-webgpu",
+                "custom-pipeline"
+            ],
+            "enginePlugin": false,
+            "envCondition": "$HTML5 || $COCOS_RUNTIME"
+        },
         "physics": {
             "label": "i18n:ENGINE.features.physics.label",
             "description": "i18n:ENGINE.features.physics.description",

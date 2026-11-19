@@ -933,6 +933,10 @@ module.exports = link(mixin({
             label: "WebGL 2.0",
             description: "Include support for WebGL 2.0 graphics API.<br> If WebGL 2.0 is not available on target platform, the one will fallback as WebGL 1.0.",
         },
+        particle_compute: {
+            label: "Compute Particles",
+            description: "Simulate 3D particles with WebGPU compute shaders. Requires 3D particles, WebGPU, and the custom render pipeline.",
+        },
         gfx_webgpu: {
             label: "WebGPU",
             description: "Include support for WebGPU graphics API.",
