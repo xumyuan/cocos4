@@ -41,11 +41,11 @@ import TextureAnimationModule from './animator/texture-animation';
 import VelocityOvertimeModule from './animator/velocity-overtime';
 import Burst from './burst';
 import ShapeModule from './emitter/shape-module';
-import { ParticleCullingMode, ParticleSpace } from './enum';
+import { ParticleCullingMode, ParticleSimulationBackend, ParticleSpace } from './enum';
 import { isCurveTwoValues, particleEmitZAxis } from './particle-general-function';
 import ParticleSystemRenderer from './renderer/particle-system-renderer-data';
 import TrailModule from './renderer/trail';
-import { ParticleSystemRendererBase } from './renderer/particle-system-renderer-base';
+import { ParticleCountInfo, ParticleSystemRendererBase } from './renderer/particle-system-renderer-base';
 import { PARTICLE_MODULE_PROPERTY } from './particle';
 import { TransformBit } from '../scene-graph/node-enum';
 import { Camera } from '../render-scene/scene';
@@ -89,9 +89,17 @@ export class ParticleSystem extends ModelRenderer {
     }
 
     public set capacity (val: number) {
-        this._capacity = Math.floor(val > 0 ? val : 0);
-        if (this.processor && this.processor.model) {
-            this.processor.model.setCapacity(this._capacity);
+        const next = Math.floor(val > 0 ? val : 0);
+        if (this._capacity === next) return;
+        const previous = this._capacity;
+        this._capacity = next;
+        if (this.processor) {
+            try {
+                this.processor.onCapacityChanged(this._capacity);
+            } catch (error) {
+                this._capacity = previous;
+                throw error;
+            }
         }
     }
 
@@ -798,6 +806,7 @@ export class ParticleSystem extends ModelRenderer {
     private declare _subEmitters: any[]; // array of { emitter: ParticleSystem, type: 'birth', 'collision' or 'death'}
 
     private declare _needAttach: boolean;
+    private declare _pendingEnable: boolean;
 
     @serializable
     private _prewarm = false;
@@ -832,6 +841,7 @@ export class ParticleSystem extends ModelRenderer {
         self._needToRestart = false;
         self._needRefresh = true;
         self._needAttach = false;
+        self._pendingEnable = false;
 
         self._time = 0.0;  // playback position in seconds.
         self._emitRateTimeCounter = 0.0;
@@ -860,7 +870,8 @@ export class ParticleSystem extends ModelRenderer {
         // HACK, TODO
         this.renderer.onInit(this);
         if (this._shapeModule) this._shapeModule.onInit(this);
-        if (this._trailModule && !this.renderer.useGPU && this._trailModule.enable) {
+        if (this._trailModule) this._trailModule.bindParticleSystem(this);
+        if (!this.processor.ownsTrail && this._trailModule && this.renderer.activeSimulationBackend === ParticleSimulationBackend.CPU && this._trailModule.enable) {
             this._trailModule.onInit(this);
         }
         this.bindModule();
@@ -873,7 +884,7 @@ export class ParticleSystem extends ModelRenderer {
      * @deprecated since v3.5.0, this is an engine private interface that will be removed in the future.
      */
     public _onMaterialModified (index: number, material: Material): void {
-        if (this.processor !== null) {
+        if (this.processor) {
             this.processor.onMaterialModified(index, material);
         }
     }
@@ -882,7 +893,9 @@ export class ParticleSystem extends ModelRenderer {
      * @deprecated since v3.5.0, this is an engine private interface that will be removed in the future.
      */
     public override _onRebuildPSO (index: number, material: Material): void {
-        this.processor.onRebuildPSO(index, material);
+        if (this.processor) {
+            this.processor.onRebuildPSO(index, material);
+        }
     }
 
     /**
@@ -890,16 +903,22 @@ export class ParticleSystem extends ModelRenderer {
      */
     public _collectModels (): scene.Model[] {
         this._models.length = 0;
-        this._models.push(this.processor.model!);
-        if (this._trailModule && this._trailModule.enable && this._trailModule.getModel()) {
+        if (!this.processor) return this._models;
+        if (this.processor.model) {
+            this._models.push(this.processor.model);
+        }
+        if (this.processor.ownsTrail && this.processor.getOwnedTrailModel()) {
+            this._models.push(this.processor.getOwnedTrailModel()!);
+        } else if (!this.processor.ownsTrail && this._trailModule && this._trailModule.enable && this._trailModule.getModel()) {
             this._models.push(this._trailModule.getModel()!);
         }
         return this._models;
     }
 
     protected _attachToScene (): void {
+        if (!this.processor) return;
         this.processor.attachToScene();
-        if (this._trailModule && this._trailModule.enable) {
+        if (!this.processor.ownsTrail && this._trailModule && this._trailModule.enable) {
             this._trailModule._attachToScene();
         }
     }
@@ -909,9 +928,11 @@ export class ParticleSystem extends ModelRenderer {
      * @mangle
      */
     public _detachFromScene (): void {
-        this.processor.detachFromScene();
-        if (this._trailModule && this._trailModule.enable) {
-            this._trailModule._detachFromScene();
+        if (this.processor) {
+            this.processor.detachFromScene();
+            if (!this.processor.ownsTrail && this._trailModule && this._trailModule.enable) {
+                this._trailModule._detachFromScene();
+            }
         }
         if (this._boundingBox) {
             this._boundingBox = null;
@@ -948,6 +969,7 @@ export class ParticleSystem extends ModelRenderer {
      * @zh 播放粒子效果。
      */
     public play (): void {
+        if (!this.processor) return;
         if (this._needToRestart) {
             this.reset();
             this._needToRestart = false;
@@ -970,7 +992,7 @@ export class ParticleSystem extends ModelRenderer {
             this._prewarmSystem();
         }
 
-        if (this._trailModule) {
+        if (!this.processor.ownsTrail && this._trailModule) {
             this._trailModule.play();
         }
 
@@ -1049,9 +1071,10 @@ export class ParticleSystem extends ModelRenderer {
      * @zh 将所有粒子从粒子系统中清除。
      */
     public clear (): void {
+        if (!this.processor) return;
         if (this.enabledInHierarchy) {
             this.processor.clear();
-            if (this._trailModule) this._trailModule.clear();
+            if (!this.processor.ownsTrail && this._trailModule) this._trailModule.clear();
         }
         this._calculateBounding(false);
     }
@@ -1066,6 +1089,17 @@ export class ParticleSystem extends ModelRenderer {
         } else {
             return 0;
         }
+    }
+
+    /** GPU backends return an asynchronous snapshot; legacy backends resolve their current count. */
+    public getParticleCountAsync (): Promise<number> {
+        return this.processor ? this.processor.getParticleCountAsync() : Promise.resolve(0);
+    }
+
+    /** Metadata distinguishes a delayed Compute snapshot from an exact CPU count. */
+    public getParticleCountInfo (): ParticleCountInfo {
+        return this.processor ? this.processor.getParticleCountInfo()
+            : { value: 0, valid: true, stale: false, tickId: -1, epoch: 0 };
     }
 
     /**
@@ -1083,17 +1117,20 @@ export class ParticleSystem extends ModelRenderer {
     }
 
     protected onDestroy (): void {
-        this.stop();
-        if (this.processor.getModel()?.scene) {
-            this.processor.detachFromScene();
-            if (this._trailModule && this._trailModule.enable) {
-                this._trailModule._detachFromScene();
-            }
-        }
+        this._pendingEnable = false;
         director.off(DirectorEvent.BEFORE_COMMIT, this.beforeRender, this);
-        // this._system.remove(this);
-        this.processor.onDestroy();
-        if (this._trailModule) this._trailModule.destroy();
+        if (this.processor) {
+            this.stop();
+            if (this.processor.getModel()?.scene) {
+                this.processor.detachFromScene();
+                if (!this.processor.ownsTrail && this._trailModule && this._trailModule.enable) {
+                    this._trailModule._detachFromScene();
+                }
+            }
+            // this._system.remove(this);
+            this.processor.onDestroy();
+            if (!this.processor.ownsTrail && this._trailModule) this._trailModule.destroy();
+        }
         if (this._culler) {
             this._culler.clear();
             this._culler.destroy();
@@ -1102,18 +1139,40 @@ export class ParticleSystem extends ModelRenderer {
     }
 
     protected onEnable (): void {
+        // onLoad already reports backend initialization failures. Do not leave
+        // a render callback behind when no processor was created.
+        if (!this.processor) {
+            this._pendingEnable = true;
+            return;
+        }
+        this._pendingEnable = false;
         super.onEnable();
         director.on(DirectorEvent.BEFORE_COMMIT, this.beforeRender, this);
         if (this.playOnAwake && !EDITOR_NOT_IN_PREVIEW) {
             this.play();
         }
         this.processor.onEnable();
-        if (this._trailModule) this._trailModule.onEnable();
+        if (!this.processor.ownsTrail && this._trailModule) this._trailModule.onEnable();
     }
+
+    /**
+     * @engineInternal
+     * Complete component-level enable after recovering from an initial backend failure.
+     */
+    public _resumePendingEnable (): boolean {
+        if (!this._pendingEnable || !this.processor) return false;
+        this._resetPosition();
+        this.onEnable();
+        return true;
+    }
+
     protected onDisable (): void {
+        this._pendingEnable = false;
         director.off(DirectorEvent.BEFORE_COMMIT, this.beforeRender, this);
-        this.processor.onDisable();
-        if (this._trailModule) this._trailModule.onDisable();
+        if (this.processor) {
+            this.processor.onDisable();
+            if (!this.processor.ownsTrail && this._trailModule) this._trailModule.onDisable();
+        }
         if (this._boundingBox) {
             this._boundingBox = null;
         }
@@ -1163,8 +1222,12 @@ export class ParticleSystem extends ModelRenderer {
     protected update (dt: number): void {
         const self = this;
         const thisProcessor = self.processor;
+        if (!thisProcessor) return;
         const thisTrailModule = self.trailModule;
-        const scaledDeltaTime = dt * self.simulationSpeed;
+        const rawDeltaTime = dt * self.simulationSpeed;
+        const scaledDeltaTime = thisProcessor.supportsBatchEmission
+            ? (Number.isFinite(Math.fround(rawDeltaTime)) && rawDeltaTime > 0 ? rawDeltaTime : 0)
+            : rawDeltaTime;
 
         if (!self.renderCulling) {
             if (self._boundingBox) {
@@ -1233,7 +1296,7 @@ export class ParticleSystem extends ModelRenderer {
                     thisProcessor.detachFromScene();
                     self._isCulled = true;
                 }
-                if (thisTrailModule && thisTrailModule.enable) {
+                if (!thisProcessor.ownsTrail && thisTrailModule && thisTrailModule.enable) {
                     thisTrailModule._detachFromScene();
                 }
                 if (self._cullingMode === ParticleCullingMode.PauseAndCatchup) {
@@ -1275,12 +1338,12 @@ export class ParticleSystem extends ModelRenderer {
         }
 
         if (self._needAttach) { // Check whether this particle model should be reattached
-            if (self.getParticleCount() > 0) {
+            if (thisProcessor.hasAliveParticles()) {
                 if (!self._isCulled) {
                     if (!thisProcessor.getModel()?.scene) {
                         thisProcessor.attachToScene();
                     }
-                    if (thisTrailModule && thisTrailModule.enable) {
+                    if (!thisProcessor.ownsTrail && thisTrailModule && thisTrailModule.enable) {
                         if (!thisTrailModule.getModel()?.scene) {
                             thisTrailModule._attachToScene();
                         }
@@ -1290,7 +1353,7 @@ export class ParticleSystem extends ModelRenderer {
             }
         }
 
-        if (!self.renderer.useGPU && thisTrailModule && thisTrailModule.enable) {
+        if (!thisProcessor.ownsTrail && self.renderer.activeSimulationBackend === ParticleSimulationBackend.CPU && thisTrailModule && thisTrailModule.enable) {
             if (!thisTrailModule.inited) {
                 thisTrailModule.clear();
                 thisTrailModule.destroy();
@@ -1305,11 +1368,12 @@ export class ParticleSystem extends ModelRenderer {
     protected beforeRender (): void {
         const self = this;
         const thisProcessor = self.processor;
+        if (!thisProcessor || self._isCulled) return;
         const thisTrailModule = self.trailModule;
-        if (self.getParticleCount() <= 0) {
+        if (!thisProcessor.hasAliveParticles()) {
             if (thisProcessor.getModel()?.scene) {
                 thisProcessor.detachFromScene();
-                if (thisTrailModule && thisTrailModule.enable) {
+                if (!thisProcessor.ownsTrail && thisTrailModule && thisTrailModule.enable) {
                     thisTrailModule._detachFromScene();
                 }
                 self._needAttach = false;
@@ -1318,21 +1382,26 @@ export class ParticleSystem extends ModelRenderer {
             self._needAttach = true;
         }
 
-        if (!self._isPlaying) return;
+        if (!self._isPlaying && !(self._isPaused && thisProcessor.supportsBatchEmission)) return;
 
         // update render data
         thisProcessor.updateRenderData();
         thisProcessor.beforeRender();
         // update trail
-        if (thisTrailModule && thisTrailModule.enable) {
+        if (self._isPlaying && !thisProcessor.ownsTrail && thisTrailModule && thisTrailModule.enable) {
             thisTrailModule.updateRenderData();
             thisTrailModule.beforeRender();
         }
     }
 
     protected _onVisibilityChange (val: number): void {
+        if (!this.processor) return;
         if (this.processor.model) {
             this.processor.model.visFlags = val;
+        }
+        const trailModel = this.processor.getOwnedTrailModel();
+        if (trailModel) {
+            trailModel.visFlags = val;
         }
     }
 
@@ -1342,8 +1411,8 @@ export class ParticleSystem extends ModelRenderer {
      */
     public emit (count: number, dt: number): void {
         const self = this;
+        if (!self.processor) return;
         const node = self.node;
-        const loopDelta = (self._time % self.duration) / self.duration; // loop delta value
 
         // refresh particle node position to update emit position
         if (self._needRefresh) {
@@ -1352,6 +1421,9 @@ export class ParticleSystem extends ModelRenderer {
 
             self._needRefresh = false;
         }
+
+        if (self.processor.supportsBatchEmission && self.processor.emitBatch(count, dt)) return;
+        const loopDelta = (self._time % self.duration) / self.duration; // loop delta value
 
         if (self._simulationSpace === ParticleSpace.World) {
             node.getWorldMatrix(_world_mat);
@@ -1447,6 +1519,7 @@ export class ParticleSystem extends ModelRenderer {
 
     // initialize particle system as though it had already completed a full cycle.
     private _prewarmSystem (): void {
+        if (!this.processor) return;
         this.startDelay.mode = Mode.Constant; // clear startDelay.
         this.startDelay.constant = 0;
         const dt = 1.0; // should use varying value?

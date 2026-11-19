@@ -300,7 +300,8 @@ export class ParticleCuller {
     }
 
     public calculatePositions (): void {
-        this._emit(this._particleSystem.capacity, 0, this._particlesAll);
+        const maxSamples = 1024;
+        this._emit(Math.min(this._particleSystem.capacity, maxSamples), 0, this._particlesAll);
         const rand = isCurveTwoValues(this._particleSystem.startLifetime) ? pseudoRandom(randomRangeInt(0, bits.INT_MAX)) : 0;
         this._updateParticles(0, this._particlesAll);
         this._calculateBounding(true);

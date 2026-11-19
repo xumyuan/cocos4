@@ -25,14 +25,23 @@
 import { ccclass, tooltip, displayOrder, type, serializable, disallowAnimation, visible } from 'cc.decorator';
 import { Mesh } from '../../3d';
 import { Material, Texture2D } from '../../asset/assets';
-import { ParticleAlignmentSpace, ParticleRenderMode } from '../enum';
+import { ParticleAlignmentSpace, ParticleRenderMode, ParticleSimulationBackend } from '../enum';
 import ParticleSystemRendererCPU from './particle-system-renderer-cpu';
 import ParticleSystemRendererGPU from './particle-system-renderer-gpu';
 import { director } from '../../game/director';
-import { Device, Format, FormatFeatureBit } from '../../gfx';
+import { API, Device, Format, FormatFeatureBit } from '../../gfx';
 import { errorID, warnID, cclegacy } from '../../core';
 
 import type { ParticleSystem } from '../particle-system';
+import type { ParticleSystemRendererBase } from './particle-system-renderer-base';
+
+type ComputeRendererFactory = (info: ParticleSystemRenderer) => ParticleSystemRendererBase;
+let computeRendererFactory: ComputeRendererFactory | null = null;
+
+/** The optional particle-compute feature registers itself without coupling legacy particle builds to WebGPU. */
+export function registerParticleComputeRendererFactory (factory: ComputeRendererFactory): void {
+    computeRendererFactory = factory;
+}
 
 function isSupportGPUParticle (): boolean {
     const device: Device = director.root!.device;
@@ -239,16 +248,64 @@ export default class ParticleSystemRenderer {
     @serializable
     private _useGPU = false;
 
+    @serializable
+    private _simulationBackend = ParticleSimulationBackend.Legacy;
+
+    /** Bounded GPU trail history; a full ring keeps the most recent points. */
+    @serializable
+    @displayOrder(11)
+    public computeTrailMaxPoints = 64;
+
+    @type(ParticleSimulationBackend)
+    @displayOrder(10)
+    public get simulationBackend (): ParticleSimulationBackend { return this._simulationBackend; }
+
+    public set simulationBackend (value: ParticleSimulationBackend) {
+        if (value === this._simulationBackend) return;
+        if (![ParticleSimulationBackend.Legacy, ParticleSimulationBackend.CPU,
+            ParticleSimulationBackend.AnalyticGPU, ParticleSimulationBackend.ComputeGPU].includes(value)) {
+            throw new RangeError('Unknown particle simulation backend');
+        }
+        if (value === ParticleSimulationBackend.ComputeGPU) this._validateComputeBackend();
+        this._simulationBackend = value;
+        this._switchProcessor();
+    }
+
+    private _validateComputeBackend (): void {
+        if (!computeRendererFactory) throw new Error('Compute particles require the particle-compute engine feature');
+        if (director.root?.device.gfxAPI !== API.WEBGPU) throw new Error('Compute particles require the WebGPU backend');
+    }
+
+    private _createProcessor (): ParticleSystemRendererBase {
+        if (this._simulationBackend === ParticleSimulationBackend.ComputeGPU) {
+            this._validateComputeBackend();
+            return computeRendererFactory!(this);
+        }
+        const analytic = this._simulationBackend === ParticleSimulationBackend.AnalyticGPU
+            || (this._simulationBackend === ParticleSimulationBackend.Legacy && this._useGPU);
+        return analytic && isSupportGPUParticle() ? new ParticleSystemRendererGPU(this) : new ParticleSystemRendererCPU(this);
+    }
+
+    /** Actual processor, including the analytic backend's compatibility fallback. */
+    public get activeSimulationBackend (): ParticleSimulationBackend {
+        const processor = this._particleSystem?.processor;
+        if (processor?.supportsBatchEmission) return ParticleSimulationBackend.ComputeGPU;
+        return processor instanceof ParticleSystemRendererGPU ? ParticleSimulationBackend.AnalyticGPU : ParticleSimulationBackend.CPU;
+    }
+
     @displayOrder(10)
     @tooltip('i18n:particleSystemRenderer.useGPU')
     public get useGPU (): boolean {
-        return this._useGPU;
+        return this._simulationBackend === ParticleSimulationBackend.AnalyticGPU
+            || (this._simulationBackend === ParticleSimulationBackend.Legacy && this._useGPU);
     }
 
     public set useGPU (val) {
-        if (this._useGPU === val) {
+        if (this._simulationBackend === ParticleSimulationBackend.Legacy && this._useGPU === val) {
             return;
         }
+
+        this._simulationBackend = ParticleSimulationBackend.Legacy;
 
         if (!isSupportGPUParticle()) {
             this._useGPU = false;
@@ -279,6 +336,7 @@ export default class ParticleSystemRenderer {
     private _alignSpace = ParticleAlignmentSpace.View;
 
     public static AlignmentSpace = ParticleAlignmentSpace;
+    public static SimulationBackend = ParticleSimulationBackend;
 
     private _particleSystem: ParticleSystem = null!;
 
@@ -294,9 +352,10 @@ export default class ParticleSystemRenderer {
 
     onInit (ps: ParticleSystem): void {
         this.create(ps);
-        const useGPU = this._useGPU && isSupportGPUParticle();
+        const processor = this._createProcessor();
+        const useGPU = processor instanceof ParticleSystemRendererGPU;
         if (!this._particleSystem.processor) {
-            this._particleSystem.processor = useGPU ? new ParticleSystemRendererGPU(this) : new ParticleSystemRendererCPU(this);
+            this._particleSystem.processor = processor;
             this._particleSystem.processor.updateAlignSpace(this.alignSpace);
             this._particleSystem.processor.onInit(ps);
         } else {
@@ -317,17 +376,32 @@ export default class ParticleSystemRenderer {
         if (!this._particleSystem) {
             return;
         }
+        const processor = this._createProcessor();
         if (this._particleSystem.processor) {
+            if (!this._particleSystem.processor.ownsTrail && this._particleSystem._trailModule) {
+                this._particleSystem._trailModule._detachFromScene();
+                this._particleSystem._trailModule.clear();
+                this._particleSystem._trailModule.destroy();
+            }
             this._particleSystem.processor.detachFromScene();
             this._particleSystem.processor.clear();
+            this._particleSystem.processor.onDestroy();
             this._particleSystem.processor = null!;
         }
-        const useGPU = this._useGPU && isSupportGPUParticle();
+        const useGPU = processor instanceof ParticleSystemRendererGPU;
         this.particleMaterial = useGPU ? this.gpuMaterial : this.cpuMaterial;
-        this._particleSystem.processor = useGPU ? new ParticleSystemRendererGPU(this) : new ParticleSystemRendererCPU(this);
+        this._particleSystem.processor = processor;
+        this._particleSystem._shapeModule?.onInit(this._particleSystem);
+        this._particleSystem._trailModule?.bindParticleSystem(this._particleSystem);
         this._particleSystem.processor.updateAlignSpace(this.alignSpace);
         this._particleSystem.processor.onInit(this._particleSystem);
-        this._particleSystem.processor.onEnable();
+        if (!processor.ownsTrail && !useGPU && this._particleSystem._trailModule?.enable) {
+            this._particleSystem._trailModule.onInit(this._particleSystem);
+            this._particleSystem._trailModule.updateMaterial();
+        }
         (this._particleSystem as any).bindModule();
+        if (!this._particleSystem._resumePendingEnable()) {
+            this._particleSystem.processor.onEnable();
+        }
     }
 }

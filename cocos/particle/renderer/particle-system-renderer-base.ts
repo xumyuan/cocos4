@@ -32,6 +32,15 @@ import { cclegacy } from '../../core';
 import { Pass } from '../../render-scene';
 import type { ParticleSystem } from '../particle-system';
 import type { Root } from '../../root';
+import type { Model } from '../../render-scene/scene/model';
+
+export interface ParticleCountInfo {
+    readonly value: number;
+    readonly valid: boolean;
+    readonly stale: boolean;
+    readonly tickId: number;
+    readonly epoch: number;
+}
 
 export abstract class ParticleSystemRendererBase {
     protected _particleSystem: ParticleSystem | null = null;
@@ -119,6 +128,12 @@ export abstract class ParticleSystemRendererBase {
         return this._model;
     }
 
+    public onCapacityChanged (capacity: number): void {
+        if (this._model) {
+            this._model.setCapacity(capacity);
+        }
+    }
+
     protected _initModel (): void {
         if (!this._model && this._particleSystem) {
             this._model = cclegacy.director.root.createModel(ParticleBatchModel);
@@ -129,6 +144,19 @@ export abstract class ParticleSystemRendererBase {
 
     public updateTrailMaterial (): void {}
     public getDefaultTrailMaterial (): Material | null { return null; }
+    /** GPU backends consume a whole emit call rather than CPU Particle objects. */
+    public get supportsBatchEmission (): boolean { return false; }
+    public emitBatch (_count: number, _dt: number): boolean { return false; }
+    /** Conservative activity, separate from potentially delayed GPU statistics. */
+    public hasAliveParticles (): boolean { return this.getParticleCount() > 0; }
+    /** Whether the backend owns Trail simulation and rendering. */
+    public get ownsTrail (): boolean { return false; }
+    public getOwnedTrailModel (): Model | null { return null; }
+    public setTrailEnabled (_enabled: boolean): void {}
+    public getParticleCountAsync (): Promise<number> { return Promise.resolve(this.getParticleCount()); }
+    public getParticleCountInfo (): ParticleCountInfo {
+        return { value: this.getParticleCount(), valid: true, stale: false, tickId: -1, epoch: 0 };
+    }
     public abstract getParticleCount (): number;
     public abstract getFreeParticle (): Particle | null;
     public abstract onMaterialModified (index: number, material: Material): void;

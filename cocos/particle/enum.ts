@@ -31,6 +31,16 @@ export enum ParticleSpace {
 }
 Enum(ParticleSpace);
 
+/** Legacy preserves the serialized useGPU flag of existing particle assets. */
+export enum ParticleSimulationBackend {
+    CPU = 0,
+    AnalyticGPU = 1,
+    ComputeGPU = 2,
+    // -1 is reserved for auto-numbering by the engine's Enum() helper.
+    Legacy = 3,
+}
+Enum(ParticleSimulationBackend);
+
 /**
  * @en Particle emitter culling mode
  * @zh 粒子的剔除模式。

@@ -19,6 +19,15 @@
         "gfx-empty": {
             "modules": ["gfx-empty"]
         },
+        "particle-compute": {
+            "modules": ["particle-compute"],
+            "dependentModules": ["custom-pipeline"],
+            "dependentAssets": [
+                "548e024f-f9b1-47f2-a98b-4e33396e0170",
+                "a7865e66-62a6-41b4-a490-087eb69fdb95",
+                "c791c755-9c08-4a9a-9a7a-b3990a4ba3a8"
+            ]
+        },
         "gfx-webgpu": {
             "modules": [
                 "gfx-webgpu"

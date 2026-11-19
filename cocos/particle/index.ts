@@ -42,5 +42,6 @@ export {
 };
 
 export * from './deprecated';
+export { ParticleSimulationBackend } from './enum';
 
 cclegacy.ParticleUtils = ParticleUtils;

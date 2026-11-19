@@ -182,6 +182,18 @@ export default class TrailModule {
     }
 
     public set enable (val) {
+        const owner = this._particleSystem;
+        if (!owner) {
+            // Serialized/editor configuration can arrive before the component is initialized.
+            this._enable = val;
+            return;
+        }
+        if (owner.processor?.ownsTrail) {
+            this._enable = val;
+            owner.processor.updateTrailMaterial();
+            owner.processor.setTrailEnabled?.(val);
+            return;
+        }
         if (val === this._enable && this._trailModel) {
             return;
         }
@@ -372,9 +384,19 @@ export default class TrailModule {
         this._inited = false;
     }
 
-    public onInit (ps: ParticleSystem): void {
+    /** Bind shared module configuration without allocating a CPU trail for a GPU owner. */
+    public bindParticleSystem (ps: ParticleSystem): void {
         this._particleSystem = ps;
         this.minParticleDistance = this._minParticleDistance;
+        if (ps.processor?.ownsTrail && (this._trailModel || this._trailSegments)) this.destroy();
+    }
+
+    public onInit (ps: ParticleSystem): void {
+        this.bindParticleSystem(ps);
+        if (ps.processor?.ownsTrail) {
+            this._inited = true;
+            return;
+        }
         let burstCount = 0;
         const psTime = ps.startLifetime.getMax();
         const psRate = ps.rateOverTime.getMax();
