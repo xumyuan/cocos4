@@ -8,6 +8,10 @@ import type { Buffer, DescriptorSet, DescriptorSetLayout, Shader, ShaderInfo } f
 import type { MacroRecord } from '../../render-scene/core/pass-utils';
 import type { ProgramLibrary } from '../../rendering/custom/private';
 
+// Match local_size_x and the ParticleState layout in the compute shaders.
+export const PARTICLE_COMPUTE_WORKGROUP_SIZE = 64;
+export const PARTICLE_COMPUTE_STATE_STRIDE = 176;
+
 /** Particle handles, counters and shader array indices use unsigned 32-bit values. */
 export function validateParticleComputeCapacity (capacity: number): void {
     if (!Number.isSafeInteger(capacity) || capacity < 1 || capacity > 0xFFFFFFFF) {
@@ -34,7 +38,9 @@ export function validateParticleComputeBuffer (device: Device, bytes: number, la
 
 /** Spread large pools over two dispatch dimensions instead of imposing a pool-size cap. */
 export function createParticleComputeDispatch (device: Device, groups: number): DispatchInfo {
-    if (!Number.isSafeInteger(groups) || groups < 1) throw new RangeError('Invalid particle compute workgroup count');
+    if (!Number.isSafeInteger(groups) || groups < 1) {
+        throw new RangeError('Invalid particle compute workgroup count');
+    }
     const limits = device.capabilities?.maxComputeWorkGroupCount;
     const x = limits?.x > 0 ? Math.min(groups, limits.x) : groups;
     const y = Math.ceil(groups / x);
@@ -44,7 +50,9 @@ export function createParticleComputeDispatch (device: Device, groups: number): 
     return new DispatchInfo(x, y, 1);
 }
 
-export interface Disposable { destroy(): void }
+export interface Disposable {
+    destroy(): void;
+}
 
 interface StateSetEntry {
     state: Buffer;
@@ -137,7 +145,9 @@ function ensureFrameHooks (): void {
     const Director = cclegacy.Director;
     if (!director || !Director || hookedDirector === director) return;
     hookedDirector = director;
-    director.on(Director.EVENT_BEGIN_FRAME, () => { inDirectorFrame = true; });
+    director.on(Director.EVENT_BEGIN_FRAME, () => {
+        inDirectorFrame = true;
+    });
     const finish = (): void => {
         inDirectorFrame = false;
         flushParticleComputeCommands();
@@ -193,7 +203,12 @@ export interface ParticleComputeBindingLayout<Resource extends string> {
 
 const computePrograms = new WeakMap<Shader, ParticleComputeProgram>();
 
-export function getParticleComputeProgram (device: Device, family: string, kernel: string, defines: MacroRecord = {}): ParticleComputeProgram {
+export function getParticleComputeProgram (
+    device: Device,
+    family: string,
+    kernel: string,
+    defines: MacroRecord = {},
+): ParticleComputeProgram {
     const rendering = cclegacy.rendering;
     if (!rendering?.enableEffectImport) {
         throw new Error('Compute particles require the custom render pipeline');
@@ -236,6 +251,8 @@ export function getParticleComputeBindingLayout<Resource extends string> (
         bindings[name] = resource.binding;
     }
     const setLayout = pipeline.pipelineLayout.setLayouts[setIndex];
-    if (!setLayout) throw new Error(`Missing Compute particle descriptor set in ${pipeline.shader.name}`);
+    if (!setLayout) {
+        throw new Error(`Missing Compute particle descriptor set in ${pipeline.shader.name}`);
+    }
     return { setLayout, setIndex, bindings };
 }

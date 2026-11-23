@@ -3,68 +3,103 @@
 #include <particle-compute/common/curves>
 
 float ccParticleScalars[31];
+
 float ccParticleCurve(uint field) {
-    return ccParticleScalars[field-14u];
+    return ccParticleScalars[field - 14u];
 }
+
 void ccEvaluateParticleCurves(bool birth, float time, float initialRandom, uint seed) {
-    uint flags=uint(ccParam(0u));
+    uint flags = uint(ccParam(0u));
     // A buffer-supplied bound keeps driver compilers from unrolling the full RealCurve evaluator per property.
-    uint end=min(uint(ccParam(55u)),birth?45u:37u);
-    for(uint field=birth?37u:14u;field<end;++field) {
-        uint flag=0u, randomSeed=seed;
-        if(field==15u || field==20u) continue;
-        if(!birth) {
-            if(field>=16u && field<=19u) { flag=1u; randomSeed=seed+39825u; }
-            else if(field<=23u && field>=21u) { flag=4u; randomSeed=seed+212165u; }
-            else if(field>=24u && field<=27u) {
-                flag=8u;
-                randomSeed=field==24u?seed^197866u:field==25u?seed^156497u:field==26u?seed^984136u:seed+197866u;
-            } else if(field>=28u && field<=31u) { flag=16u; randomSeed=seed+23541u; }
-            else if(field>=32u && field<=34u) { flag=32u; randomSeed=seed+125292u; }
-            else if(field>=35u) { flag=64u; randomSeed=seed+90794u; }
-            if(flag!=0u && (flags&flag)==0u) continue;
+    uint end = min(uint(ccParam(55u)), birth ? 45u : 37u);
+    for (uint field = birth ? 37u : 14u; field < end; ++field) {
+        uint flag = 0u;
+        uint randomSeed = seed;
+        if (field == 15u || field == 20u) {
+            continue;
         }
-        ccParticleScalars[field-14u]=ccCurve(field,time,birth?initialRandom:ccParticlePseudoRandom(randomSeed));
+        if (!birth) {
+            if (field >= 16u && field <= 19u) {
+                flag = 1u;
+                randomSeed = seed + 39825u;
+            } else if (field <= 23u && field >= 21u) {
+                flag = 4u;
+                randomSeed = seed + 212165u;
+            } else if (field >= 24u && field <= 27u) {
+                flag = 8u;
+                randomSeed = field == 24u ? seed ^ 197866u
+                    : field == 25u ? seed ^ 156497u
+                    : field == 26u ? seed ^ 984136u
+                    : seed + 197866u;
+            } else if (field >= 28u && field <= 31u) {
+                flag = 16u;
+                randomSeed = seed + 23541u;
+            } else if (field >= 32u && field <= 34u) {
+                flag = 32u;
+                randomSeed = seed + 125292u;
+            } else if (field >= 35u) {
+                flag = 64u;
+                randomSeed = seed + 90794u;
+            }
+            if (flag != 0u && (flags & flag) == 0u) {
+                continue;
+            }
+        }
+        ccParticleScalars[field - 14u] = ccCurve(field, time, birth ? initialRandom : ccParticlePseudoRandom(randomSeed));
     }
 }
 
 vec4 ccQuaternionMultiply(vec4 a, vec4 b) {
     return vec4(a.w * b.xyz + b.w * a.xyz + cross(a.xyz, b.xyz), a.w * b.w - dot(a.xyz, b.xyz));
 }
+
 vec4 ccQuaternionFromEuler(vec3 radians) {
-    vec3 s = sin(radians * 0.5), c = cos(radians * 0.5);
+    vec3 s = sin(radians * 0.5);
+    vec3 c = cos(radians * 0.5);
     // Cocos Quat.fromEuler: YZX order (not a generic XYZ replacement).
-    return vec4(s.x * c.y * c.z + c.x * s.y * s.z, c.x * s.y * c.z + s.x * c.y * s.z, c.x * c.y * s.z - s.x * s.y * c.z,
-                c.x * c.y * c.z - s.x * s.y * s.z);
+    return vec4(
+        s.x * c.y * c.z + c.x * s.y * s.z,
+        c.x * s.y * c.z + s.x * c.y * s.z,
+        c.x * c.y * s.z - s.x * s.y * c.z,
+        c.x * c.y * c.z - s.x * s.y * s.z
+    );
 }
+
 vec3 ccRotateVector(vec4 quaternion, vec3 v) {
     // Vec3.transformQuat evaluates q*v*conjugate(q), including non-unit q.
     return dot(quaternion, quaternion) * v + 2.0 * cross(quaternion.xyz, cross(quaternion.xyz, v) + quaternion.w * v);
 }
+
 float ccInitialLifetime(float loopDelta, float randomRatio) {
     return ccParticleCurve(44u);
 }
+
 float ccInitialSpeed(float loopDelta, float randomRatio) {
     return ccParticleCurve(43u);
 }
+
 void ccInitializeParticleModules(inout ParticleState p, float loopDelta, float randomRatio) {
-    uint seed = p.identity.x, mode = uint(ccParam(1u));
+    uint seed = p.identity.x;
+    uint mode = uint(ccParam(1u));
     float sx = ccParticleCurve(37u);
     p.startSize = vec4(sx, sx, 1.0, 0.0);
-    if (ccParam(12u) != 0.0)
+    if (ccParam(12u) != 0.0) {
         p.startSize.xyz = vec3(sx, ccParticleCurve(38u), ccParticleCurve(39u));
+    }
     p.size = vec4(p.startSize.xyz, 0.0);
     p.startColor = ccColor(15u, loopDelta, randomRatio, ccParticleRandomPair(seed ^ p.identity.y));
     p.color = p.startColor;
     vec3 startEuler = vec3(0.0, 0.0, ccParticleCurve(42u));
-    if (ccParam(13u) != 0.0)
+    if (ccParam(13u) != 0.0) {
         startEuler.xy = vec2(ccParticleCurve(40u), ccParticleCurve(41u));
+    }
     p.rotation = vec4(startEuler, 0.0);
     vec3 filtered = startEuler;
-    if (mode == 1u)
+    if (mode == 1u) {
         filtered = vec3(0.0);
-    else if (mode == 2u || mode == 3u)
+    } else if (mode == 2u || mode == 3u) {
         filtered.xy = vec2(0.0);
+    }
     p.startRotation = ccQuaternionFromEuler(filtered);
     p.deltaRotation = vec4(0.0, 0.0, 0.0, 1.0);
     p.renderVelocity = vec4(p.velocityLife.xyz, 0.0);
@@ -75,23 +110,29 @@ void ccInitializeParticleModules(inout ParticleState p, float loopDelta, float r
         p.startSize.w = floor(ccParticleRandom(seed ^ p.identity.y ^ 90794u) * ccParam(7u));
     }
 }
+
 float ccDampen(float velocity, float limitValue, float dampen) {
     float magnitude = abs(velocity);
-    if (magnitude > limitValue) magnitude = max(limitValue, magnitude - magnitude * dampen);
+    if (magnitude > limitValue) {
+        magnitude = max(limitValue, magnitude - magnitude * dampen);
+    }
     return sign(velocity) * magnitude;
 }
+
 #if CC_PARTICLE_HAS_NOISE
 int ccPerm(uint permBase, int i) {
     uint idx = uint(i) & 255u;
     uint pair = uint(ccParam(permBase + (idx >> 1u)));
     return int((pair >> ((idx & 1u) * 8u)) & 255u);
 }
+
 float ccNoiseGradient(int hash, vec3 p) {
     int h = hash & 15;
     float u = h < 8 ? p.x : p.y;
     float v = h < 4 ? p.y : ((h == 12 || h == 14) ? p.x : p.z);
     return ((h & 1) == 0 ? u : -u) + ((h & 2) == 0 ? v : -v);
 }
+
 float ccPerlin(uint permBase, vec3 point) {
     ivec3 cube = ivec3(floor(point)) & ivec3(255);
     vec3 p = fract(point);
@@ -103,14 +144,36 @@ float ccPerlin(uint permBase, vec3 point) {
     int ba = ccPerm(permBase, b) + cube.z;
     int bb = ccPerm(permBase, b + 1) + cube.z;
     return mix(
-        mix(mix(ccNoiseGradient(ccPerm(permBase, aa), p), ccNoiseGradient(ccPerm(permBase, ba), p - vec3(1.0, 0.0, 0.0)), f.x),
-            mix(ccNoiseGradient(ccPerm(permBase, ab), p - vec3(0.0, 1.0, 0.0)), ccNoiseGradient(ccPerm(permBase, bb), p - vec3(1.0, 1.0, 0.0)), f.x),
-            f.y),
-        mix(mix(ccNoiseGradient(ccPerm(permBase, aa + 1), p - vec3(0.0, 0.0, 1.0)), ccNoiseGradient(ccPerm(permBase, ba + 1), p - vec3(1.0, 0.0, 1.0)), f.x),
-            mix(ccNoiseGradient(ccPerm(permBase, ab + 1), p - vec3(0.0, 1.0, 1.0)), ccNoiseGradient(ccPerm(permBase, bb + 1), p - vec3(1.0, 1.0, 1.0)), f.x),
-            f.y),
-        f.z);
+        mix(
+            mix(
+                ccNoiseGradient(ccPerm(permBase, aa), p),
+                ccNoiseGradient(ccPerm(permBase, ba), p - vec3(1.0, 0.0, 0.0)),
+                f.x
+            ),
+            mix(
+                ccNoiseGradient(ccPerm(permBase, ab), p - vec3(0.0, 1.0, 0.0)),
+                ccNoiseGradient(ccPerm(permBase, bb), p - vec3(1.0, 1.0, 0.0)),
+                f.x
+            ),
+            f.y
+        ),
+        mix(
+            mix(
+                ccNoiseGradient(ccPerm(permBase, aa + 1), p - vec3(0.0, 0.0, 1.0)),
+                ccNoiseGradient(ccPerm(permBase, ba + 1), p - vec3(1.0, 0.0, 1.0)),
+                f.x
+            ),
+            mix(
+                ccNoiseGradient(ccPerm(permBase, ab + 1), p - vec3(0.0, 1.0, 1.0)),
+                ccNoiseGradient(ccPerm(permBase, bb + 1), p - vec3(1.0, 1.0, 1.0)),
+                f.x
+            ),
+            f.y
+        ),
+        f.z
+    );
 }
+
 float ccOctaveNoise(uint permBase, vec3 point) {
     uint octaves = uint(ccParam(52u));
     float frequency = ccParam(51u);
@@ -129,20 +192,22 @@ float ccOctaveNoise(uint permBase, vec3 point) {
     return sum / range;
 }
 #endif
+
 void ccApplyParticleModules(inout ParticleState p, float dt, float systemTime, uint tickId, vec3 gravity) {
-    uint flags = uint(ccParam(0u)), seed = p.identity.x, renderMode = uint(ccParam(1u));
+    uint flags = uint(ccParam(0u));
+    uint seed = p.identity.x;
+    uint renderMode = uint(ccParam(1u));
     float t = p.velocityLife.w > 0.0 ? 1.0 - p.positionLife.w / p.velocityLife.w : 0.0;
     ccEvaluateParticleCurves(false, t, 0.0, seed);
     p.velocityLife.xyz += gravity * ccParticleCurve(14u) * dt;
     p.renderVelocity.xyz = p.velocityLife.xyz;
     if ((flags & 1u) != 0u) {
-        p.size.xyz =
-            p.startSize.xyz * (ccParam(2u) == 0.0 ? vec3(ccParticleCurve(16u))
-                                                  : vec3(ccParticleCurve(17u), ccParticleCurve(18u), ccParticleCurve(19u)));
+        p.size.xyz = p.startSize.xyz * (ccParam(2u) == 0.0
+            ? vec3(ccParticleCurve(16u))
+            : vec3(ccParticleCurve(17u), ccParticleCurve(18u), ccParticleCurve(19u)));
     }
     if ((flags & 2u) != 0u) {
-        vec4 color =
-            ccColor(20u, t, ccParticlePseudoRandom(seed + 91041u), ccParticleRandomPair(seed ^ tickId ^ p.identity.y));
+        vec4 color = ccColor(20u, t, ccParticlePseudoRandom(seed + 91041u), ccParticleRandomPair(seed ^ tickId ^ p.identity.y));
         p.color = ccByteColor(p.startColor * color);
     }
     if ((flags & 4u) != 0u) {
@@ -151,24 +216,23 @@ void ccApplyParticleModules(inout ParticleState p, float dt, float systemTime, u
         p.renderVelocity.xyz = p.velocityLife.xyz;
     }
     if ((flags & 8u) != 0u) {
-        vec3 animated = vec3(ccParticleCurve(24u),
-                             ccParticleCurve(25u),
-                             ccParticleCurve(26u));
-        p.renderVelocity.xyz = (p.velocityLife.xyz + ccRotateVector(ccParam4(68u), animated)) *
-                               ccParticleCurve(27u);
+        vec3 animated = vec3(ccParticleCurve(24u), ccParticleCurve(25u), ccParticleCurve(26u));
+        p.renderVelocity.xyz = (p.velocityLife.xyz + ccRotateVector(ccParam4(68u), animated)) * ccParticleCurve(27u);
     }
     if ((flags & 16u) != 0u) {
         float dampen = ccParam(5u);
         if (ccParam(3u) != 0.0) {
-            vec3 limitValue =
-                ccRotateVector(ccParam4(72u), vec3(ccParticleCurve(29u), ccParticleCurve(30u), ccParticleCurve(31u)));
-            p.renderVelocity.xyz = vec3(ccDampen(p.renderVelocity.x, limitValue.x, dampen),
-                                        ccDampen(p.renderVelocity.y, limitValue.y, dampen),
-                                        ccDampen(p.renderVelocity.z, limitValue.z, dampen));
+            vec3 limitValue = ccRotateVector(ccParam4(72u), vec3(ccParticleCurve(29u), ccParticleCurve(30u), ccParticleCurve(31u)));
+            p.renderVelocity.xyz = vec3(
+                ccDampen(p.renderVelocity.x, limitValue.x, dampen),
+                ccDampen(p.renderVelocity.y, limitValue.y, dampen),
+                ccDampen(p.renderVelocity.z, limitValue.z, dampen)
+            );
         } else {
             float speed = length(p.renderVelocity.xyz);
-            if (speed > 0.0)
+            if (speed > 0.0) {
                 p.renderVelocity.xyz = p.renderVelocity.xyz / speed * ccDampen(speed, ccParticleCurve(28u), dampen);
+            }
         }
         p.velocityLife.xyz = p.renderVelocity.xyz;
     }
@@ -178,26 +242,34 @@ void ccApplyParticleModules(inout ParticleState p, float dt, float systemTime, u
         // still the original (possibly Shape-aligned) start Euler at this point.
         if ((p.identity.w & 1u) == 0u) {
             vec3 initialEuler = p.rotation.xyz;
-            if (renderMode == 1u)
+            if (renderMode == 1u) {
                 initialEuler = vec3(0.0);
-            else if (renderMode == 2u || renderMode == 3u)
+            } else if (renderMode == 2u || renderMode == 3u) {
                 initialEuler.xy = vec2(0.0);
+            }
             p.startRotation = ccQuaternionFromEuler(initialEuler);
             p.identity.w |= 1u;
         }
         vec3 angles = vec3(0.0, 0.0, ccParticleCurve(34u));
-        if (ccParam(4u) != 0.0 && renderMode != 2u && renderMode != 3u)
+        if (ccParam(4u) != 0.0 && renderMode != 2u && renderMode != 3u) {
             angles.xy = vec2(ccParticleCurve(32u), ccParticleCurve(33u));
+        }
         p.deltaRotation = normalize(ccQuaternionMultiply(p.deltaRotation, ccQuaternionFromEuler(angles * dt)));
         vec4 q = normalize(ccQuaternionMultiply(p.startRotation, p.deltaRotation));
-        if (renderMode == 1u) q = vec4(0.0, 0.0, 0.0, 1.0);
+        if (renderMode == 1u) {
+            q = vec4(0.0, 0.0, 0.0, 1.0);
+        }
         p.rotation.xyz = q.xyz;
-        if (q.w < 0.0) p.rotation.x += 10.0;
+        if (q.w < 0.0) {
+            p.rotation.x += 10.0;
+        }
     }
     if ((flags & 64u) != 0u) {
         float startFrame = ccParticleCurve(35u) / (ccParam(6u) * ccParam(7u));
         float f = fract(ccParam(11u) * (ccParticleCurve(36u) + startFrame));
-        if (ccParam(8u) == 1.0) f = ((ccParam(9u) != 0.0 ? p.startSize.w : ccParam(10u)) + f) / ccParam(7u);
+        if (ccParam(8u) == 1.0) {
+            f = ((ccParam(9u) != 0.0 ? p.startSize.w : ccParam(10u)) + f) / ccParam(7u);
+        }
         p.renderVelocity.w = f;
     }
 #if CC_PARTICLE_HAS_NOISE
@@ -211,8 +283,9 @@ void ccApplyParticleModules(inout ParticleState p, float dt, float systemTime, u
         for (uint axis = 0u; axis < axisCount; ++axis) {
             vec3 samplePoint = axis == 0u
                 ? vec3(point.z + speed.x, point.y, point.x)
-                : (axis == 1u ? vec3(point.x + 1000.0, point.z + speed.y, point.y)
-                              : vec3(point.y, point.x + 1000.0, point.z + speed.z));
+                : (axis == 1u
+                    ? vec3(point.x + 1000.0, point.z + speed.y, point.y)
+                    : vec3(point.y, point.x + 1000.0, point.z + speed.z));
             float n = ccOctaveNoise(permBase, samplePoint);
             if (axis == 0u) {
                 noise.x = n;

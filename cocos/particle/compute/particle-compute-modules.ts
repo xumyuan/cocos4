@@ -1,7 +1,12 @@
 /* Copyright (c) 2026 Xiamen Yaji Software Co., Ltd. */
 
+import GradientRange from '../animator/gradient-range';
+import { ParticleRenderMode } from '../enum';
 import type { ParticleSystem } from '../particle-system';
-import { ParticleComputeCurvePacker, ComputeScalar } from './particle-compute-curves';
+import {
+    ComputeScalar, DEFAULT_PARTICLE_COMPUTE_CURVE_SAMPLES, PACKED_SCALAR_CURVE_COUNT_OFFSET,
+    PARTICLE_COMPUTE_MODULE_HEADER_FLOATS, ParticleComputeCurvePacker,
+} from './particle-compute-curves';
 
 export { ParticleComputeCurvePacker } from './particle-compute-curves';
 
@@ -75,6 +80,17 @@ export const ComputeShaderFeature = {
     NOISE: 16,
 } as const;
 
+const ComputeModuleFlag = {
+    SIZE: 1 << 0,
+    COLOR: 1 << 1,
+    FORCE: 1 << 2,
+    VELOCITY: 1 << 3,
+    LIMIT: 1 << 4,
+    ROTATION: 1 << 5,
+    TEXTURE: 1 << 6,
+    NOISE: 1 << 7,
+} as const;
+
 const NOISE_PERMUTATION = [
     151, 160, 137, 91, 90, 15, 131, 13, 201, 95, 96, 53, 194, 233, 7, 225, 140, 36, 103, 30, 69, 142, 8, 99, 37, 240,
     21, 10, 23, 190, 6, 148, 247, 120, 234, 75, 0, 26, 197, 62, 94, 252, 219, 203, 117, 35, 11, 32, 57, 177, 33, 88,
@@ -88,8 +104,9 @@ const NOISE_PERMUTATION = [
     204, 176, 115, 121, 50, 45, 127, 4, 150, 254, 138, 236, 205, 93, 222, 114, 67, 29, 24, 72, 243, 141, 128, 195, 78,
     66, 215, 61, 156, 180,
 ];
+
 const NOISE_PERMUTATION_PAIRS = Array.from(
-    { length: 128 },
+    { length: NOISE_PERMUTATION.length / 2 },
     (_, i) => NOISE_PERMUTATION[i * 2] | (NOISE_PERMUTATION[i * 2 + 1] << 8),
 );
 
@@ -126,13 +143,18 @@ export function compileParticleComputeModules (
     source: ParticleComputeModuleSource = {},
     options: ParticleComputeModuleOptions = {},
 ): CompiledParticleComputeModules {
-    const packer = new ParticleComputeCurvePacker(128, options.samples ?? 256);
+
+    const packer = new ParticleComputeCurvePacker(
+        PARTICLE_COMPUTE_MODULE_HEADER_FLOATS, options.samples ?? DEFAULT_PARTICLE_COMPUTE_CURVE_SAMPLES,
+    );
     const moduleData = packer.values;
     const offsets = ComputeModuleOffset;
     moduleData[offsets.SCALAR_END] = offsets.START_LIFE + 1;
+
     const scalar = (offset: number, curve: ComputeScalar | null | undefined, fallback = 0): void => {
         moduleData[offset] = packer.scalar(curve, fallback);
     };
+
     const size = source.sizeOvertimeModule;
     const color = source.colorOverLifetimeModule;
     const force = source.forceOvertimeModule;
@@ -141,21 +163,41 @@ export function compileParticleComputeModules (
     const rotation = source.rotationOvertimeModule;
     const texture = source.textureAnimationModule;
     const noise = source.noiseModule;
+
     let flags = 0;
-    if (size?.enable) flags |= 1;
-    if (color?.enable) flags |= 2;
-    if (force?.enable) flags |= 4;
-    if (velocity?.enable) flags |= 8;
-    if (limit?.enable) flags |= 16;
-    if (rotation?.enable) flags |= 32;
-    if (texture?.enable) flags |= 64;
-    if (noise?.enable) flags |= 128;
+    if (size?.enable) {
+        flags |= ComputeModuleFlag.SIZE;
+    }
+    if (color?.enable) {
+        flags |= ComputeModuleFlag.COLOR;
+    }
+    if (force?.enable) {
+        flags |= ComputeModuleFlag.FORCE;
+    }
+    if (velocity?.enable) {
+        flags |= ComputeModuleFlag.VELOCITY;
+    }
+    if (limit?.enable) {
+        flags |= ComputeModuleFlag.LIMIT;
+    }
+    if (rotation?.enable) {
+        flags |= ComputeModuleFlag.ROTATION;
+    }
+    if (texture?.enable) {
+        flags |= ComputeModuleFlag.TEXTURE;
+    }
+    if (noise?.enable) {
+        flags |= ComputeModuleFlag.NOISE;
+    }
+
     if (texture?.enable && (!Number.isInteger(texture.numTilesX) || texture.numTilesX < 1
         || !Number.isInteger(texture.numTilesY) || texture.numTilesY < 1)) {
         throw new RangeError('Enabled texture animation requires positive integer tile counts');
     }
+
+    // from offset 0 to SCALAR_END, all values are either scalars or pointers into the same float buffer
     moduleData[offsets.FLAGS] = flags;
-    moduleData[offsets.RENDER_MODE] = options.renderMode ?? 0;
+    moduleData[offsets.RENDER_MODE] = options.renderMode ?? ParticleRenderMode.Billboard;
     moduleData[offsets.SIZE_AXES] = size?.separateAxes ? 1 : 0;
     moduleData[offsets.LIMIT_AXES] = limit?.separateAxes ? 1 : 0;
     moduleData[offsets.ROTATION_AXES] = rotation?.separateAxes ? 1 : 0;
@@ -168,6 +210,7 @@ export function compileParticleComputeModules (
     moduleData[offsets.CYCLES] = texture?.cycleCount ?? 1;
     moduleData[offsets.START_SIZE_3D] = source.startSize3D ? 1 : 0;
     moduleData[offsets.START_ROTATION_3D] = source.startRotation3D ? 1 : 0;
+
     scalar(offsets.GRAVITY, source.gravityModifier, 1);
     moduleData[offsets.START_COLOR] = packer.color(source.startColor);
     scalar(offsets.SIZE, size?.size, 1);
@@ -199,6 +242,7 @@ export function compileParticleComputeModules (
     scalar(offsets.START_ROTATION_Z, source.startRotationZ);
     scalar(offsets.START_SPEED, source.startSpeed, 1);
     scalar(offsets.START_LIFE, source.startLifetime, 1);
+
     moduleData[offsets.NOISE_STRENGTH] = noise?.strengthX ?? 0;
     moduleData[offsets.NOISE_STRENGTH + 1] = noise?.strengthY ?? 0;
     moduleData[offsets.NOISE_STRENGTH + 2] = noise?.strengthZ ?? 0;
@@ -209,50 +253,84 @@ export function compileParticleComputeModules (
     moduleData[offsets.NOISE_OCTAVES] = noise?.octaves ?? 1;
     moduleData[offsets.NOISE_MULTIPLIER] = noise?.octaveMultiplier ?? 0.5;
     moduleData[offsets.NOISE_SCALE] = noise?.octaveScale ?? 2;
-    if (!Number.isInteger(moduleData[offsets.NOISE_OCTAVES]) || moduleData[offsets.NOISE_OCTAVES] < 1 || moduleData[offsets.NOISE_OCTAVES] > 4) {
+
+    if (!Number.isInteger(moduleData[offsets.NOISE_OCTAVES])
+        || moduleData[offsets.NOISE_OCTAVES] < 1
+        || moduleData[offsets.NOISE_OCTAVES] > 4) {
         throw new RangeError('Noise octaves must be in [1, 4]');
     }
-    if ((flags & 128) !== 0) {
+
+    if ((flags & ComputeModuleFlag.NOISE) !== 0) {
         moduleData[offsets.NOISE_PERM] = packer.append(NOISE_PERMUTATION_PAIRS);
     }
-    const isSpline = (field: number): boolean => packer.values[moduleData[field] + 2] < 0;
+
+    const isSpline = (field: number): boolean => packer.values[moduleData[field] + PACKED_SCALAR_CURVE_COUNT_OFFSET] < 0;
     const isGradient = (field: number): boolean => {
         const mode = packer.values[moduleData[field]];
-        return mode !== 0 && mode !== 2;
+        return mode !== GradientRange.Mode.Color && mode !== GradientRange.Mode.TwoColors;
     };
     let features = ComputeShaderFeature.VALID;
     for (let field = offsets.START_SIZE_X; field <= offsets.START_LIFE; ++field) {
-        if (isSpline(field)) { features |= ComputeShaderFeature.BIRTH_SPLINE; break; }
+        if (isSpline(field)) {
+            features |= ComputeShaderFeature.BIRTH_SPLINE;
+            break;
+        }
     }
-    if (isGradient(offsets.START_COLOR)) features |= ComputeShaderFeature.BIRTH_GRADIENT;
+    if (isGradient(offsets.START_COLOR)) {
+        features |= ComputeShaderFeature.BIRTH_GRADIENT;
+    }
+
     const activeUpdateRanges: Array<readonly [number, number, number]> = [
         [0, offsets.GRAVITY, offsets.GRAVITY],
-        [1, offsets.SIZE, offsets.SIZE_Z],
-        [4, offsets.FORCE_X, offsets.FORCE_Z],
-        [8, offsets.VELOCITY_X, offsets.SPEED],
-        [16, offsets.LIMIT, offsets.LIMIT_Z],
-        [32, offsets.ROTATION_X, offsets.ROTATION_Z],
-        [64, offsets.START_FRAME, offsets.FRAME],
+        [ComputeModuleFlag.SIZE, offsets.SIZE, offsets.SIZE_Z],
+        [ComputeModuleFlag.FORCE, offsets.FORCE_X, offsets.FORCE_Z],
+        [ComputeModuleFlag.VELOCITY, offsets.VELOCITY_X, offsets.SPEED],
+        [ComputeModuleFlag.LIMIT, offsets.LIMIT, offsets.LIMIT_Z],
+        [ComputeModuleFlag.ROTATION, offsets.ROTATION_X, offsets.ROTATION_Z],
+        [ComputeModuleFlag.TEXTURE, offsets.START_FRAME, offsets.FRAME],
     ];
     for (const [mask, begin, end] of activeUpdateRanges) {
-        if (mask !== 0 && (flags & mask) === 0) continue;
-        for (let field = begin; field <= end; ++field) {
-            if (isSpline(field)) { features |= ComputeShaderFeature.UPDATE_SPLINE; break; }
+        if (mask !== 0 && (flags & mask) === 0) {
+            continue;
         }
-        if ((features & ComputeShaderFeature.UPDATE_SPLINE) !== 0) break;
+        for (let field = begin; field <= end; ++field) {
+            if (isSpline(field)) {
+                features |= ComputeShaderFeature.UPDATE_SPLINE;
+                break;
+            }
+        }
+        if ((features & ComputeShaderFeature.UPDATE_SPLINE) !== 0) {
+            break;
+        }
     }
-    if ((flags & 2) !== 0 && isGradient(offsets.COLOR)) features |= ComputeShaderFeature.UPDATE_GRADIENT;
-    if ((flags & 128) !== 0) features |= ComputeShaderFeature.NOISE;
+    if ((flags & ComputeModuleFlag.COLOR) !== 0 && isGradient(offsets.COLOR)) {
+        features |= ComputeShaderFeature.UPDATE_GRADIENT;
+    }
+    if ((flags & ComputeModuleFlag.NOISE) !== 0) {
+        features |= ComputeShaderFeature.NOISE;
+    }
     moduleData[offsets.SHADER_FEATURES] = features;
+
     const identity = [0, 0, 0, 1];
-    for (const [offset, value] of [[offsets.FORCE_ROTATION, options.forceRotation ?? identity],
-        [offsets.VELOCITY_ROTATION, options.velocityRotation ?? identity], [offsets.LIMIT_ROTATION, options.limitRotation ?? identity]] as const) {
-        for (let i = 0; i < 4; ++i) moduleData[offset + i] = value[i];
+    for (const [offset, value] of [
+        [offsets.FORCE_ROTATION, options.forceRotation ?? identity],
+        [offsets.VELOCITY_ROTATION, options.velocityRotation ?? identity],
+        [offsets.LIMIT_ROTATION, options.limitRotation ?? identity],
+    ] as const) {
+        for (let i = 0; i < 4; ++i) {
+            moduleData[offset + i] = value[i];
+        }
     }
+
     const data = packer.finish();
-    if (data.some((value) => !Number.isFinite(value))) throw new RangeError('Particle module parameters must be finite');
+
+    if (data.some((value) => !Number.isFinite(value))) {
+        throw new RangeError('Particle module parameters must be finite');
+    }
+
     if (options.maxSampledScalarError !== undefined && packer.maxSampledScalarError > options.maxSampledScalarError) {
         throw new RangeError(`Particle curve LUT error ${packer.maxSampledScalarError} exceeds ${options.maxSampledScalarError}`);
     }
+
     return { data, flags, samples: packer.samples, maxSampledScalarError: packer.maxSampledScalarError };
 }

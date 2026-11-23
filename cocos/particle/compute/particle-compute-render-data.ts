@@ -6,7 +6,7 @@ import {
 } from '../../gfx';
 import {
     createParticleComputeDispatch, flushParticleComputeCommands, getParticleComputeBindingLayout,
-    getParticleComputeProgram, ParticleComputeStateSets, runParticleComputePass,
+    getParticleComputeProgram, PARTICLE_COMPUTE_WORKGROUP_SIZE, ParticleComputeStateSets, runParticleComputePass,
 } from './particle-compute-effect';
 import type { Disposable, ParticleComputeBindingLayout } from './particle-compute-effect';
 
@@ -16,6 +16,7 @@ const PARTICLE_COMPUTE_RENDER_STRIDE = 44;
 const PARTICLE_COMPUTE_STRETCHED_RENDER_STRIDE = 56;
 
 const RENDER_RESOURCES = ['RenderParams', 'SimulationState', 'SimulationCounters', 'InstanceVertices', 'IndirectArguments'] as const;
+
 interface RenderPrepareShared extends ParticleComputeBindingLayout<typeof RENDER_RESOURCES[number]> {
     readonly pipeline: PipelineState;
 }
@@ -53,7 +54,7 @@ export class ParticleComputeRenderData {
         indexCount: number,
     ) {
         const device = _device;
-        this._dispatchInfo = createParticleComputeDispatch(device, Math.max(1, Math.ceil(_capacity / 64)));
+        this._dispatchInfo = createParticleComputeDispatch(device, Math.max(1, Math.ceil(_capacity / PARTICLE_COMPUTE_WORKGROUP_SIZE)));
         if (_vertexBuffer.stride !== PARTICLE_COMPUTE_RENDER_STRIDE
             && _vertexBuffer.stride !== PARTICLE_COMPUTE_STRETCHED_RENDER_STRIDE) {
             throw new Error('Unsupported Compute particle instance stride');
@@ -65,7 +66,10 @@ export class ParticleComputeRenderData {
             bindings.SimulationState,
             bindings.SimulationCounters,
         );
-        const own = <T extends Disposable>(resource: T): T => { this._owned.push(resource); return resource; };
+        const own = <T extends Disposable>(resource: T): T => {
+            this._owned.push(resource);
+            return resource;
+        };
         try {
             this._parameters = own(device.createBuffer(new BufferInfo(
                 BufferUsageBit.UNIFORM | BufferUsageBit.TRANSFER_DST,
@@ -95,12 +99,14 @@ export class ParticleComputeRenderData {
     }
 
     public prepare (state: Buffer, counters: Buffer, textureAnimation = false, activeBound = this._capacity): void {
-        if (this._destroyed) throw new Error('ParticleComputeRenderData has been destroyed');
+        if (this._destroyed) {
+            throw new Error('ParticleComputeRenderData has been destroyed');
+        }
         const set = this._sets.acquire(state, counters);
         const textureFlag = textureAnimation ? 1 : 0;
         const clamped = Math.min(this._capacity, Math.max(0, activeBound));
-        const maxGroups = Math.max(1, Math.ceil(this._capacity / 64));
-        const activeGroups = Math.max(1, Math.ceil(clamped / 64));
+        const maxGroups = Math.max(1, Math.ceil(this._capacity / PARTICLE_COMPUTE_WORKGROUP_SIZE));
+        const activeGroups = Math.max(1, Math.ceil(clamped / PARTICLE_COMPUTE_WORKGROUP_SIZE));
         const dispatch = activeGroups === maxGroups ? this._dispatchInfo : createParticleComputeDispatch(this._device, activeGroups);
         runParticleComputePass(this._device, this, () => {
             if (this._parameterData[3] !== textureFlag) {
@@ -119,7 +125,9 @@ export class ParticleComputeRenderData {
         this._destroyed = true;
         flushParticleComputeCommands(this._device);
         this._sets.clear();
-        for (let i = this._owned.length - 1; i >= 0; --i) this._owned[i].destroy();
+        for (let i = this._owned.length - 1; i >= 0; --i) {
+            this._owned[i].destroy();
+        }
         this._owned.length = 0;
     }
 }

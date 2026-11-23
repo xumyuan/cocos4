@@ -1,10 +1,15 @@
 /* Copyright (c) 2026 Xiamen Yaji Software Co., Ltd. */
+
 import { Mat4, Quat } from '../../core';
 import { ParticleSpace } from '../enum';
 import type { ParticleSystem } from '../particle-system';
 
-const PARTICLE_COMPUTE_BIRTH_FLOATS = 64;
-export interface ParticleComputeBirthBatch { readonly count: number; readonly data: Float32Array }
+export const PARTICLE_COMPUTE_BIRTH_FLOATS = 64;
+
+export interface ParticleComputeBirthBatch {
+    readonly count: number;
+    readonly data: Float32Array;
+}
 
 /**
  * @engineInternal
@@ -20,6 +25,7 @@ export function compileParticleComputeBirth (ps: ParticleSystem, count: number, 
     data[14] = world ? 1 : 0;
     data[15] = ps.renderer.renderMode;
     data[19] = ps.time;
+
     const shapeRotation = new Quat();
     if (shape?.enable) {
         data[3] = shape.shapeType;
@@ -36,6 +42,7 @@ export function compileParticleComputeBirth (ps: ParticleSystem, count: number, 
         data.set([1, 1, 1], 16);
     }
     Quat.toArray(data, shapeRotation, 24);
+
     const matrix = new Mat4();
     const rotation = new Quat();
     if (world) {
