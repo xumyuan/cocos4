@@ -67,6 +67,7 @@ export class WebGPUPipelineState extends PipelineState {
     private _resourceLayout!: WebGPUShaderPipelineLayout;
 
     public get resourceLayout (): WebGPUShaderPipelineLayout { return this._resourceLayout; }
+
     public initialize (info: Readonly<PipelineStateInfo>): void {
         this._primitive = info.primitive;
         this._shader = info.shader;

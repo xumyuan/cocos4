@@ -30,12 +30,20 @@ export function getShaderLayoutEntries (
         for (let match = declaration.exec(stage.source); match; match = declaration.exec(stage.source)) {
             const groupMatch = /@group\((\d+)\)/.exec(match[1]);
             const bindingMatch = /@binding\((\d+)\)/.exec(match[1]);
-            if (!groupMatch || !bindingMatch) continue;
-            const group = Number(groupMatch[1]); const binding = Number(bindingMatch[1]);
+            if (!groupMatch || !bindingMatch) {
+                continue;
+            }
+            const group = Number(groupMatch[1]);
+            const binding = Number(bindingMatch[1]);
             const template = templates[group]?.find((entry) => entry.binding === binding);
-            if (!template) throw new Error(`Shader ${shader.name} resource ${group}:${binding} is missing from its GFX template`);
+            if (!template) {
+                throw new Error(`Shader ${shader.name} resource ${group}:${binding} is missing from its GFX template`);
+            }
             const previous = sets[group].get(binding);
-            if (previous) { previous.visibility |= visibility; continue; }
+            if (previous) {
+                previous.visibility |= visibility;
+                continue;
+            }
             const entry: GPUBindGroupLayoutEntry = { binding, visibility };
             const address = (match[2] || '').replace(/\s/g, '');
             const type = match[4].trim();
@@ -53,10 +61,14 @@ export function getShaderLayoutEntries (
                     '1d': '1d', '2d': '2d', '2d_array': '2d-array', '3d': '3d', cube: 'cube', cube_array: 'cube-array',
                 };
                 const viewDimension = dimensions[suffix];
-                if (!viewDimension) throw new Error(`Unsupported WGSL texture dimension: ${kind}`);
+                if (!viewDimension) {
+                    throw new Error(`Unsupported WGSL texture dimension: ${kind}`);
+                }
                 if (kind.includes('storage')) {
                     const argumentsList = /<\s*([^,>]+)\s*,\s*([^>]+)>/.exec(type);
-                    if (!argumentsList) throw new Error(`Malformed WGSL storage texture: ${type}`);
+                    if (!argumentsList) {
+                        throw new Error(`Malformed WGSL storage texture: ${type}`);
+                    }
                     const access = argumentsList[2].trim();
                     const nativeAccess = access === 'read' ? 'read-only' : access === 'read_write' ? 'read-write' : 'write-only';
                     entry.storageTexture = { ...template.storageTexture,

@@ -911,7 +911,7 @@ module.exports = link(mixin({
             label: "WebGL 2.0",
             description: "包含对 WebGL 2.0 图形 API 的支持。<br>当 WebGL 2.0 在目标平台上不可用时会自动回退至 WebGL 1.0。",
         },
-        particle_compute: {
+        'particle_compute': {
             label: "Compute 粒子",
             description: "使用 WebGPU 计算着色器模拟 3D 粒子，需要启用 3D 粒子、WebGPU 和自定义渲染管线。",
         },

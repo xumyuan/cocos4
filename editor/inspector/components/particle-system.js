@@ -2,6 +2,9 @@
 
 const propUtils = require('../utils/prop');
 
+const COMPUTE_BACKEND_TIP = 'Compute GPU requires the particle-compute feature, WebGPU and the custom render pipeline in both the editor Scene and runtime. '
+    + 'Compute uses CPU particle materials. Legacy assets retain Use GPU behavior.';
+
 exports.template = /* html*/`
 <div class="particle-system-component">
     <div class="content">
@@ -168,7 +171,7 @@ exports.template = /* html*/`
                 <ui-label type style="white-space: nowrap;opacity: 0.55;margin-left: 4px;flex:auto;font-weight:normal;" value=": cc.ParticleSystemRenderer"></ui-label>
             </div>
             <ui-prop id="simulation-backend" type="dump" key="renderer.value.simulationBackend" displayName="Simulation Backend"></ui-prop>
-            <ui-label id="compute-backend-tip" value="Compute GPU requires the particle-compute feature, WebGPU and the custom render pipeline in both the editor Scene and runtime. Compute uses CPU particle materials. Legacy assets retain Use GPU behavior."></ui-label>
+            <ui-label id="compute-backend-tip" value="${COMPUTE_BACKEND_TIP}"></ui-label>
             <ui-prop id="compute-trail-points" type="dump" key="renderer.value.computeTrailMaxPoints" displayName="Compute Trail Max Points"></ui-prop>
             <ui-prop type="dump" key="renderer.value.renderMode"></ui-prop>
             <ui-prop type="dump" key="renderer.value.velocityScale"></ui-prop>
@@ -232,8 +235,11 @@ exports.methods = {
             [this.$.trailMaterial, !state.supportsCPUModules],
             [this.$.gpuMaterial, !state.analytic || state.mixed],
         ]) {
-            if (disabled) element.setAttribute('state-disabled', '');
-            else element.removeAttribute('state-disabled');
+            if (disabled) {
+                element.setAttribute('state-disabled', '');
+            } else {
+                element.removeAttribute('state-disabled');
+            }
         }
     },
 

@@ -56,6 +56,7 @@ function finite (value: number): number {
 export class ParticleComputeCurvePacker {
     public readonly values: number[];
     public readonly samples: number;
+
     /** Custom-evaluator LUT error only; zero does not imply exact f32 arithmetic for direct curves. */
     public maxSampledScalarError = 0;
 

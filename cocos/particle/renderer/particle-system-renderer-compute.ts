@@ -53,11 +53,14 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
 
     public constructor (info: ParticleSystemRenderer) {
         super(info);
-        if (deviceManager.gfxDevice.gfxAPI !== API.WEBGPU) throw new Error('Compute particles require WebGPU');
+        if (deviceManager.gfxDevice.gfxAPI !== API.WEBGPU) {
+            throw new Error('Compute particles require WebGPU');
+        }
         this._useInstance = true;
     }
 
     public get supportsBatchEmission (): boolean { return true; }
+
     public get ownsTrail (): boolean { return true; }
 
     protected _initModel (): void {
@@ -74,7 +77,9 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
             this._simulation = new ParticleComputeSimulation(deviceManager.gfxDevice, Math.max(1, ps.capacity), finiteF32(ps.time));
             this._bindState();
         } catch (error) {
-            if (ps.processor === this) ps.processor = null!;
+            if (ps.processor === this) {
+                ps.processor = null!;
+            }
             this.onDestroy();
             throw error;
         }
@@ -107,15 +112,21 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
     }
 
     public emitBatch (count: number, dt: number): boolean {
-        if (!Number.isFinite(count) || !Number.isFinite(dt)) throw new RangeError('Particle emit count and dt must be finite');
+        if (!Number.isFinite(count) || !Number.isFinite(dt)) {
+            throw new RangeError('Particle emit count and dt must be finite');
+        }
         const ps = this._particleSystem;
         if (!ps || count <= 0 || ps.capacity === 0) return true;
-        if (this._births.length >= 1024) throw new RangeError('Too many particle emission batches before a simulation update');
+        if (this._births.length >= 1024) {
+            throw new RangeError('Too many particle emission batches before a simulation update');
+        }
         this._births.push(compileParticleComputeBirth(ps, Math.ceil(count), dt));
         this._birthRevision++;
         this._mayHaveParticles = true;
         this._countValid = false;
-        if (this._model) this._model.enabled = true;
+        if (this._model) {
+            this._model.enabled = true;
+        }
         return true;
     }
 
@@ -177,17 +188,26 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
             systemTime,
             [this._gravityVector.x, this._gravityVector.y, this._gravityVector.z],
         );
-        if (this._births.length > 0) this._committedBirthRevision = this._birthRevision;
+        if (this._births.length > 0) {
+            this._committedBirthRevision = this._birthRevision;
+        }
         this._births.length = 0;
         this._bindState();
         this._updateComputeTrail(stepDt, systemTime);
-        if (this._model) this._model.enabled = this._mayHaveParticles;
+        if (this._model) {
+            this._model.enabled = this._mayHaveParticles;
+        }
+
         // No future automatic births: a delayed zero is authoritative until an
         // emit/clear/restart changes the revision or epoch. Rendering never waits.
         if (!ps.isEmitting && this._mayHaveParticles && !this._pollPending) {
             this._pollPending = true;
             const pollEpoch = this._epoch;
-            const finish = (): void => { if (this._epoch === pollEpoch) this._pollPending = false; };
+            const finish = (): void => {
+                if (this._epoch === pollEpoch) {
+                    this._pollPending = false;
+                }
+            };
             // Both paths release this epoch's poll without requiring ES2018 Promise.finally.
             this.getParticleCountAsync().then(finish, finish);
         }
@@ -210,12 +230,16 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
     public updateTrailMaterial (): void {
         super.updateTrailMaterial();
         const material = this._particleSystem?.getMaterialInstance(1) || this.getDefaultTrailMaterial();
-        if (this._computeTrailModel && material) this._computeTrailModel.setSubModelMaterial(0, material);
+        if (this._computeTrailModel && material) {
+            this._computeTrailModel.setSubModelMaterial(0, material);
+        }
     }
 
     public onRebuildPSO (index: number, material: Material): void {
         super.onRebuildPSO(index, material);
-        if (index === 1 && this._computeTrailModel) this._computeTrailModel.setSubModelMaterial(0, material);
+        if (index === 1 && this._computeTrailModel) {
+            this._computeTrailModel.setSubModelMaterial(0, material);
+        }
     }
 
     public getOwnedTrailModel (): scene.Model | null {
@@ -223,29 +247,39 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
     }
 
     public setTrailEnabled (enabled: boolean): void {
-        if (!enabled) this._disableComputeTrail();
+        if (!enabled) {
+            this._disableComputeTrail();
+        }
     }
 
     private _disableComputeTrail (): void {
-        if (this._trailEnabled) this._trail?.clearHistory();
+        if (this._trailEnabled) {
+            this._trail?.clearHistory();
+        }
         this._trailEnabled = false;
         if (this._computeTrailModel) {
             this._computeTrailModel.enabled = false;
-            if (this._computeTrailModel.scene) this._computeTrailModel.scene.removeModel(this._computeTrailModel);
+            if (this._computeTrailModel.scene) {
+                this._computeTrailModel.scene.removeModel(this._computeTrailModel);
+            }
         }
     }
 
     public attachToScene (): void {
         super.attachToScene();
         if (this._computeTrailModel && this._particleSystem) {
-            if (this._computeTrailModel.scene) this._computeTrailModel.scene.removeModel(this._computeTrailModel);
+            if (this._computeTrailModel.scene) {
+                this._computeTrailModel.scene.removeModel(this._computeTrailModel);
+            }
             this._particleSystem._getRenderScene().addModel(this._computeTrailModel);
         }
     }
 
     public detachFromScene (): void {
         super.detachFromScene();
-        if (this._computeTrailModel?.scene) this._computeTrailModel.scene.removeModel(this._computeTrailModel);
+        if (this._computeTrailModel?.scene) {
+            this._computeTrailModel.scene.removeModel(this._computeTrailModel);
+        }
     }
 
     public onDisable (): void {
@@ -279,7 +313,9 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
             this._trail = new ParticleComputeTrail(deviceManager.gfxDevice, simulation.capacity, maxPoints, compiled);
             this.updateTrailMaterial();
             const material = ps.getMaterialInstance(1) || this.getDefaultTrailMaterial();
-            if (!material) throw new Error('Compute Trail material is unavailable');
+            if (!material) {
+                throw new Error('Compute Trail material is unavailable');
+            }
             this._computeTrailModel = cclegacy.director.root.createModel(scene.Model);
             const model = this._computeTrailModel!;
             model.node = model.transform = ps.node;
@@ -293,7 +329,9 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
             ], PrimitiveMode.TRIANGLE_LIST, this._trail.indexBuffer, this._trail.indirectBuffer, false);
             this._trailSubMesh.iaInfo.gpuIndirect = { offset: 0, count: 1, stride: 20 };
             model.initSubModel(0, this._trailSubMesh, material);
-            if (this._model?.scene) ps._getRenderScene().addModel(model);
+            if (this._model?.scene) {
+                ps._getRenderScene().addModel(model);
+            }
         } else if (recompiled) {
             this._trail.configure(compiled);
             this.updateTrailMaterial();
@@ -309,12 +347,16 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
             simulation.activeBound ?? simulation.capacity,
         );
         this._computeTrailModel!.enabled = this._mayHaveParticles;
-        if (this._model?.scene && !this._computeTrailModel!.scene) ps._getRenderScene().addModel(this._computeTrailModel!);
+        if (this._model?.scene && !this._computeTrailModel!.scene) {
+            ps._getRenderScene().addModel(this._computeTrailModel!);
+        }
     }
 
     private _destroyComputeTrail (): void {
         if (this._computeTrailModel) {
-            if (this._computeTrailModel.scene) this._computeTrailModel.scene.removeModel(this._computeTrailModel);
+            if (this._computeTrailModel.scene) {
+                this._computeTrailModel.scene.removeModel(this._computeTrailModel);
+            }
             cclegacy.director.root.destroyModel(this._computeTrailModel);
             this._computeTrailModel = null;
         }
@@ -332,7 +374,9 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
     }
 
     public getParticleCount (): number { return this._lastCount; }
+
     public hasAliveParticles (): boolean { return this._mayHaveParticles || this._births.length > 0; }
+
     public getParticleCountInfo (): ParticleCountInfo {
         return { value: this._lastCount,
             valid: this._countValid,
@@ -355,7 +399,9 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
                 this._lastCount = count;
                 this._countValid = true;
                 this._countTick = tick;
-                if (count === 0 && !hadPendingBirths && this._births.length === 0) this._mayHaveParticles = false;
+                if (count === 0 && !hadPendingBirths && this._births.length === 0) {
+                    this._mayHaveParticles = false;
+                }
             } else if (tick > this._countTick || !this._countValid) {
                 // New births arrived or were committed while reading back: update the latest GPU count
                 // snapshot without marking it authoritative for drain termination.
@@ -375,8 +421,12 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
         this._simulation?.clear();
         this._trail?.clear();
         this._model?.clear();
-        if (this._model) this._model.enabled = false;
-        if (this._computeTrailModel) this._computeTrailModel.enabled = false;
+        if (this._model) {
+            this._model.enabled = false;
+        }
+        if (this._computeTrailModel) {
+            this._computeTrailModel.enabled = false;
+        }
         this._lastCount = 0;
         this._countValid = true;
         this._countTick = 0;
@@ -384,7 +434,9 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
     }
 
     public setUseInstance (value: boolean): void {
-        if (!value) throw new Error('Compute particle materials require instanced vertex attributes');
+        if (!value) {
+            throw new Error('Compute particle materials require instanced vertex attributes');
+        }
     }
 
     public onDestroy (): void {

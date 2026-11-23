@@ -42,7 +42,7 @@ type SimulationShared = ParticleComputeBindingLayout<typeof SIMULATION_RESOURCES
 const FIXED_KERNELS = ['initialize', 'prepare', 'scan', 'scatter', 'finalize'];
 const SINGLE_DISPATCH = new DispatchInfo(1, 1, 1);
 const sharedSimulationResources = new WeakMap<Device, SimulationShared>();
-let nextSimulationInstanceId = 1;
+let nextSimulationInstanceID = 1;
 
 function getSharedSimulationResources (device: Device): SimulationShared {
     const existing = sharedSimulationResources.get(device);
@@ -98,13 +98,18 @@ export class ParticleComputeSimulation {
     private readonly _groups: number;
     private readonly _seed: number;
 
-    public constructor (private readonly _device: Device, public readonly capacity: number, initialTime = 0, seed?: number) {
+    public constructor (
+        private readonly _device: Device,
+        public readonly capacity: number,
+        initialTime = 0,
+        seed: number | undefined = undefined,
+    ) {
         if (_device.gfxAPI !== API.WEBGPU) {
             throw new Error('Compute particles require WebGPU');
         }
         validateParticleComputeCapacity(capacity);
         const randomSalt = Math.floor(Math.random() * 0x100000000) >>> 0;
-        const instanceMix = Math.imul(nextSimulationInstanceId++, 0x9e3779b1) >>> 0;
+        const instanceMix = Math.imul(nextSimulationInstanceID++, 0x9e3779b1) >>> 0;
         // Keep exponent < 0xff so vec4 clockInfo.w passes through floatBitsToUint without NaN canonicalization.
         this._seed = ((seed === undefined ? (randomSalt ^ instanceMix) : seed) & 0xbfffffff) >>> 0;
         this._groups = Math.ceil(capacity / PARTICLE_COMPUTE_WORKGROUP_SIZE);
@@ -197,6 +202,7 @@ export class ParticleComputeSimulation {
         return this._control;
     }
 
+    /** The public name matches the tickId field returned by ParticleSystem.getParticleCountInfo. */
     public get tickId (): number {
         return this._tick;
     }

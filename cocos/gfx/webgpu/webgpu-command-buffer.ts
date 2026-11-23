@@ -594,13 +594,18 @@ export class WebGPUCommandBuffer extends CommandBuffer {
             throw new RangeError('Invalid indirect argument byte range, command count or stride.');
         }
         if (drawCount === 0) return;
-        if (this._isStateValid) this.bindStates();
+        if (this._isStateValid) {
+            this.bindStates();
+        }
         const nativeBuffer = gpuBuffer.gpuBuffer;
         const byteOffset = gpuBuffer.gpuOffset + offset;
         this._renderPassFuncQueue.push((passEncoder): void => {
             for (let i = 0; i < drawCount; ++i) {
-                if (indexed) passEncoder.drawIndexedIndirect(nativeBuffer, byteOffset + i * stride);
-                else passEncoder.drawIndirect(nativeBuffer, byteOffset + i * stride);
+                if (indexed) {
+                    passEncoder.drawIndexedIndirect(nativeBuffer, byteOffset + i * stride);
+                } else {
+                    passEncoder.drawIndirect(nativeBuffer, byteOffset + i * stride);
+                }
             }
         });
         this._numDrawCalls += drawCount;

@@ -266,14 +266,20 @@ export default class ParticleSystemRenderer {
             ParticleSimulationBackend.AnalyticGPU, ParticleSimulationBackend.ComputeGPU].includes(value)) {
             throw new RangeError('Unknown particle simulation backend');
         }
-        if (value === ParticleSimulationBackend.ComputeGPU) this._validateComputeBackend();
+        if (value === ParticleSimulationBackend.ComputeGPU) {
+            this._validateComputeBackend();
+        }
         this._simulationBackend = value;
         this._switchProcessor();
     }
 
     private _validateComputeBackend (): void {
-        if (!computeRendererFactory) throw new Error('Compute particles require the particle-compute engine feature');
-        if (director.root?.device.gfxAPI !== API.WEBGPU) throw new Error('Compute particles require the WebGPU backend');
+        if (!computeRendererFactory) {
+            throw new Error('Compute particles require the particle-compute engine feature');
+        }
+        if (director.root?.device.gfxAPI !== API.WEBGPU) {
+            throw new Error('Compute particles require the WebGPU backend');
+        }
     }
 
     private _createProcessor (): ParticleSystemRendererBase {

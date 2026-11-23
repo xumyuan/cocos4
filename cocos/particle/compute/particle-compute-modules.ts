@@ -143,9 +143,9 @@ export function compileParticleComputeModules (
     source: ParticleComputeModuleSource = {},
     options: ParticleComputeModuleOptions = {},
 ): CompiledParticleComputeModules {
-
     const packer = new ParticleComputeCurvePacker(
-        PARTICLE_COMPUTE_MODULE_HEADER_FLOATS, options.samples ?? DEFAULT_PARTICLE_COMPUTE_CURVE_SAMPLES,
+        PARTICLE_COMPUTE_MODULE_HEADER_FLOATS,
+        options.samples ?? DEFAULT_PARTICLE_COMPUTE_CURVE_SAMPLES,
     );
     const moduleData = packer.values;
     const offsets = ComputeModuleOffset;

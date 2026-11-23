@@ -38,6 +38,7 @@ export interface ParticleCountInfo {
     readonly value: number;
     readonly valid: boolean;
     readonly stale: boolean;
+    /** Existing public snapshot key for the simulation tick. */
     readonly tickId: number;
     readonly epoch: number;
 }
@@ -144,19 +145,28 @@ export abstract class ParticleSystemRendererBase {
 
     public updateTrailMaterial (): void {}
     public getDefaultTrailMaterial (): Material | null { return null; }
+
     /** GPU backends consume a whole emit call rather than CPU Particle objects. */
     public get supportsBatchEmission (): boolean { return false; }
+
     public emitBatch (_count: number, _dt: number): boolean { return false; }
+
     /** Conservative activity, separate from potentially delayed GPU statistics. */
     public hasAliveParticles (): boolean { return this.getParticleCount() > 0; }
+
     /** Whether the backend owns Trail simulation and rendering. */
     public get ownsTrail (): boolean { return false; }
+
     public getOwnedTrailModel (): Model | null { return null; }
+
     public setTrailEnabled (_enabled: boolean): void {}
+
     public getParticleCountAsync (): Promise<number> { return Promise.resolve(this.getParticleCount()); }
+
     public getParticleCountInfo (): ParticleCountInfo {
         return { value: this.getParticleCount(), valid: true, stale: false, tickId: -1, epoch: 0 };
     }
+
     public abstract getParticleCount (): number;
     public abstract getFreeParticle (): Particle | null;
     public abstract onMaterialModified (index: number, material: Material): void;

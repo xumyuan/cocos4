@@ -638,7 +638,9 @@ export function WebGPUCmdFuncUpdateBuffer (
         Array.prototype.push.apply(gpuBuffer.indirects, buffer.drawInfos);
     } else {
         // GPU-produced argument buffers use raw bytes, not the legacy CPU DrawInfo list.
-        if (gpuBuffer.usage & BufferUsageBit.INDIRECT) gpuBuffer.indirects.length = 0;
+        if (gpuBuffer.usage & BufferUsageBit.INDIRECT) {
+            gpuBuffer.indirects.length = 0;
+        }
         const nativeDevice: GPUDevice = device.nativeDevice!;
         let buff = buffer as ArrayBuffer;
         let rawBuffer: ArrayBuffer;

@@ -267,7 +267,9 @@ export class WebGPUDescriptorSet extends DescriptorSet {
         const entries: GPUBindGroupEntry[] = [];
         for (const active of activeEntries) {
             const source = this._bindGroupEntries.get(active.binding);
-            if (!source) throw new Error(`No GFX resource bound for shader binding ${active.binding}`);
+            if (!source) {
+                throw new Error(`No GFX resource bound for shader binding ${active.binding}`);
+            }
             let entry = source;
             if (active.texture) {
                 const index = this._gpuDescriptorSet!.descriptorIndices[active.binding];

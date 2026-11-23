@@ -388,7 +388,9 @@ export default class TrailModule {
     public bindParticleSystem (ps: ParticleSystem): void {
         this._particleSystem = ps;
         this.minParticleDistance = this._minParticleDistance;
-        if (ps.processor?.ownsTrail && (this._trailModel || this._trailSegments)) this.destroy();
+        if (ps.processor?.ownsTrail && (this._trailModel || this._trailSegments)) {
+            this.destroy();
+        }
     }
 
     public onInit (ps: ParticleSystem): void {

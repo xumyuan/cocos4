@@ -34,7 +34,9 @@ export default class ParticleComputeModel extends ParticleBatchModel {
     private _textureAnimation = false;
 
     public setCapacity (capacity: number): void {
-        if (capacity !== 0) validateParticleComputeCapacity(capacity);
+        if (capacity !== 0) {
+            validateParticleComputeCapacity(capacity);
+        }
         if (capacity === this._computeCapacity) return;
         const previous = this._computeCapacity;
         this._computeCapacity = capacity;
@@ -54,14 +56,19 @@ export default class ParticleComputeModel extends ParticleBatchModel {
 
     public updateMaterial (material: Material): void {
         this._computeMaterial = material;
-        if (this._computeSubMesh) this.setSubModelMaterial(0, material);
-        else this._rebuildComputeGeometry();
+        if (this._computeSubMesh) {
+            this.setSubModelMaterial(0, material);
+        } else {
+            this._rebuildComputeGeometry();
+        }
     }
 
     /** Keep the previous SubModel intact if rebuilding the new one fails mid-initialization. */
     public override initSubModel (idx: number, subMeshData: RenderingSubMesh, mat: Material): void {
         const previous = this._subModels[idx] ?? null;
-        if (previous) this._subModels[idx] = null!;
+        if (previous) {
+            this._subModels[idx] = null!;
+        }
         try {
             super.initSubModel(idx, subMeshData, mat);
         } catch (error) {
@@ -160,7 +167,9 @@ export default class ParticleComputeModel extends ParticleBatchModel {
         const primitive = mesh?.struct.primitives[0];
         const vertexCount = mesh && primitive ? mesh.struct.vertexBundles[primitive.vertexBundelIndices[0]].view.count : 4;
         const indexCount = primitive ? (primitive.indexView?.count ?? vertexCount) : 6;
-        if (vertexCount < 1 || staticStride < 1) throw new Error('Compute particle geometry is empty');
+        if (vertexCount < 1 || staticStride < 1) {
+            throw new Error('Compute particle geometry is empty');
+        }
         const vertices = new ArrayBuffer(staticStride * vertexCount);
         if (mesh) {
             const copy = (source: AttributeName, target: AttributeName): boolean => {
@@ -176,25 +185,37 @@ export default class ParticleComputeModel extends ParticleBatchModel {
                 if (offset !== undefined && color) {
                     const view = new DataView(vertices);
                     for (let i = 0; i < vertexCount; ++i) {
-                        if (color.format === Format.RGBA8) view.setUint32(i * staticStride + offset, 0xFFFFFFFF, true);
-                        else throw new Error('Missing mesh color requires the RGBA8 white fallback layout');
+                        if (color.format === Format.RGBA8) {
+                            view.setUint32(i * staticStride + offset, 0xFFFFFFFF, true);
+                        } else {
+                            throw new Error('Missing mesh color requires the RGBA8 white fallback layout');
+                        }
                     }
                 }
             }
         } else {
             new Float32Array(vertices).set([0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0]);
         }
+
         const indexStride = vertexCount > 65535 || primitive?.indexView?.stride === 4 ? 4 : 2;
         const indices = indexStride === 4 ? new Uint32Array(indexCount) : new Uint16Array(indexCount);
-        if (mesh && primitive?.indexView) mesh.copyIndices(0, indices);
-        else if (mesh) for (let i = 0; i < indexCount; ++i) indices[i] = i;
-        else indices.set([0, 1, 2, 3, 2, 1]);
+        if (mesh && primitive?.indexView) {
+            mesh.copyIndices(0, indices);
+        } else if (mesh) {
+            for (let i = 0; i < indexCount; ++i) {
+                indices[i] = i;
+            }
+        } else {
+            indices.set([0, 1, 2, 3, 2, 1]);
+        }
 
         const allocated: Buffer[] = [];
         let nextRenderData: ParticleComputeRenderData | null = null;
         let nextSubMesh: RenderingSubMesh | null = null;
         const create = (usage: BufferUsageBit, size: number, stride: number): Buffer => {
-            if (usage & BufferUsageBit.STORAGE) validateParticleComputeBuffer(this._device, size, 'Compute particle model buffer');
+            if (usage & BufferUsageBit.STORAGE) {
+                validateParticleComputeBuffer(this._device, size, 'Compute particle model buffer');
+            }
             const buffer = this._device.createBuffer(new BufferInfo(usage | BufferUsageBit.TRANSFER_DST, MemoryUsageBit.DEVICE, size, stride));
             allocated.push(buffer);
             return buffer;
@@ -225,12 +246,16 @@ export default class ParticleComputeModel extends ParticleBatchModel {
             this._computeSubMesh = nextSubMesh;
             this._indexedArguments = argumentsBuffer;
             this._renderDirty = true;
+
             prevRenderData?.destroy();
             prevSubMesh?.destroy();
         } catch (error) {
             nextRenderData?.destroy();
-            if (nextSubMesh) nextSubMesh.destroy();
-            else allocated.forEach((buffer) => buffer.destroy());
+            if (nextSubMesh) {
+                nextSubMesh.destroy();
+            } else {
+                allocated.forEach((buffer) => buffer.destroy());
+            }
             throw error;
         }
     }

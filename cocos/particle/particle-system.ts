@@ -870,8 +870,11 @@ export class ParticleSystem extends ModelRenderer {
         // HACK, TODO
         this.renderer.onInit(this);
         if (this._shapeModule) this._shapeModule.onInit(this);
-        if (this._trailModule) this._trailModule.bindParticleSystem(this);
-        if (!this.processor.ownsTrail && this._trailModule && this.renderer.activeSimulationBackend === ParticleSimulationBackend.CPU && this._trailModule.enable) {
+        if (this._trailModule) {
+            this._trailModule.bindParticleSystem(this);
+        }
+        if (!this.processor.ownsTrail && this._trailModule
+            && this.renderer.activeSimulationBackend === ParticleSimulationBackend.CPU && this._trailModule.enable) {
             this._trailModule.onInit(this);
         }
         this.bindModule();
@@ -1074,7 +1077,9 @@ export class ParticleSystem extends ModelRenderer {
         if (!this.processor) return;
         if (this.enabledInHierarchy) {
             this.processor.clear();
-            if (!this.processor.ownsTrail && this._trailModule) this._trailModule.clear();
+            if (!this.processor.ownsTrail && this._trailModule) {
+                this._trailModule.clear();
+            }
         }
         this._calculateBounding(false);
     }
@@ -1129,7 +1134,9 @@ export class ParticleSystem extends ModelRenderer {
             }
             // this._system.remove(this);
             this.processor.onDestroy();
-            if (!this.processor.ownsTrail && this._trailModule) this._trailModule.destroy();
+            if (!this.processor.ownsTrail && this._trailModule) {
+                this._trailModule.destroy();
+            }
         }
         if (this._culler) {
             this._culler.clear();
@@ -1152,7 +1159,9 @@ export class ParticleSystem extends ModelRenderer {
             this.play();
         }
         this.processor.onEnable();
-        if (!this.processor.ownsTrail && this._trailModule) this._trailModule.onEnable();
+        if (!this.processor.ownsTrail && this._trailModule) {
+            this._trailModule.onEnable();
+        }
     }
 
     /**
@@ -1171,7 +1180,9 @@ export class ParticleSystem extends ModelRenderer {
         director.off(DirectorEvent.BEFORE_COMMIT, this.beforeRender, this);
         if (this.processor) {
             this.processor.onDisable();
-            if (!this.processor.ownsTrail && this._trailModule) this._trailModule.onDisable();
+            if (!this.processor.ownsTrail && this._trailModule) {
+                this._trailModule.onDisable();
+            }
         }
         if (this._boundingBox) {
             this._boundingBox = null;
@@ -1353,7 +1364,8 @@ export class ParticleSystem extends ModelRenderer {
             }
         }
 
-        if (!thisProcessor.ownsTrail && self.renderer.activeSimulationBackend === ParticleSimulationBackend.CPU && thisTrailModule && thisTrailModule.enable) {
+        if (!thisProcessor.ownsTrail && self.renderer.activeSimulationBackend === ParticleSimulationBackend.CPU
+            && thisTrailModule && thisTrailModule.enable) {
             if (!thisTrailModule.inited) {
                 thisTrailModule.clear();
                 thisTrailModule.destroy();

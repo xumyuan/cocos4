@@ -158,6 +158,7 @@ export class WebGPUDevice extends Device {
             return result;
         } finally { staging.destroy(); }
     }
+
     public flushCommands (cmdBuffs: CommandBuffer[]): void {
         // noop
     }
