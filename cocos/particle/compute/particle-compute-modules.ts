@@ -4,7 +4,7 @@ import GradientRange from '../animator/gradient-range';
 import { ParticleRenderMode } from '../enum';
 import type { ParticleSystem } from '../particle-system';
 import {
-    ComputeScalar, DEFAULT_PARTICLE_COMPUTE_CURVE_SAMPLES, PACKED_SCALAR_CURVE_COUNT_OFFSET,
+    ComputeColorOffset, ComputeScalar, DEFAULT_PARTICLE_COMPUTE_CURVE_SAMPLES, PACKED_SCALAR_CURVE_COUNT_OFFSET,
     PARTICLE_COMPUTE_MODULE_HEADER_FLOATS, ParticleComputeCurvePacker,
 } from './particle-compute-curves';
 
@@ -80,7 +80,7 @@ export const ComputeShaderFeature = {
     NOISE: 16,
 } as const;
 
-const ComputeModuleFlag = {
+export const ComputeModuleFlag = {
     SIZE: 1 << 0,
     COLOR: 1 << 1,
     FORCE: 1 << 2,
@@ -266,7 +266,7 @@ export function compileParticleComputeModules (
 
     const isSpline = (field: number): boolean => packer.values[moduleData[field] + PACKED_SCALAR_CURVE_COUNT_OFFSET] < 0;
     const isGradient = (field: number): boolean => {
-        const mode = packer.values[moduleData[field]];
+        const mode = packer.values[moduleData[field] + ComputeColorOffset.MODE];
         return mode !== GradientRange.Mode.Color && mode !== GradientRange.Mode.TwoColors;
     };
     let features = ComputeShaderFeature.VALID;

@@ -7,14 +7,16 @@ void main() {
     if (i >= counts.x) return;
     control[scratch.w + i] = i;
     control[identityOffsets.x + i] = 0u;
-    control[identityOffsets.y + i] = 0xffffffffu;
+    control[identityOffsets.y + i] = PARTICLE_INVALID_INDEX;
     if (clockInfo.y < 0.5) control[identityOffsets.w + i] = 0u;
     if (i == 0u) {
-        uint arc = control[10], last = control[11];
-        for (uint j = 0u; j < 16u; j++)
+        uint arc = control[PARTICLE_SIM_CTRL_ARC_TOTAL];
+        uint last = control[PARTICLE_SIM_CTRL_ARC_LAST_TIME];
+        for (uint j = 0u; j < PARTICLE_SIM_CTRL_HEADER_WORDS; j++) {
             control[j] = 0u;
-        control[4] = counts.x;
-        control[10] = clockInfo.y > 0.5 ? arc : 0u;
-        control[11] = clockInfo.y > 0.5 ? last : floatBitsToUint(clockInfo.w);
+        }
+        control[PARTICLE_SIM_CTRL_FREE_COUNT] = counts.x;
+        control[PARTICLE_SIM_CTRL_ARC_TOTAL] = clockInfo.y > 0.5 ? arc : 0u;
+        control[PARTICLE_SIM_CTRL_ARC_LAST_TIME] = clockInfo.y > 0.5 ? last : floatBitsToUint(clockInfo.w);
     }
 }

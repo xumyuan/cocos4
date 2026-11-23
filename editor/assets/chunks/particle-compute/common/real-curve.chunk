@@ -32,14 +32,14 @@ float ccEaseIn(uint family, float k) {
     return 1.0 - ccBounceOut(1.0 - k);
 }
 float ccEasing(uint method, float k) {
-    if (method == 0u) return k;
-    if (method == 1u) return 0.0;
-    if (method >= 42u) {
+    if (method == PARTICLE_EASING_LINEAR) return k;
+    if (method == PARTICLE_EASING_CONSTANT) return 0.0;
+    if (method >= PARTICLE_EASING_SMOOTH) {
         k = clamp(k, 0.0, 1.0);
-        return method == 42u ? k * k * (3.0 - 2.0 * k) : k * k * k * (k * (k * 6.0 - 15.0) + 10.0);
+        return method == PARTICLE_EASING_SMOOTH ? k * k * (3.0 - 2.0 * k) : k * k * k * (k * (k * 6.0 - 15.0) + 10.0);
     }
-    uint family = (method - 2u) / 4u;
-    uint direction = (method - 2u) % 4u;
+    uint family = (method - PARTICLE_EASING_QUAD_IN) / 4u;
+    uint direction = (method - PARTICLE_EASING_QUAD_IN) % 4u;
     if (direction == 2u && family == 8u) {
         float s = 1.70158 * 1.525;
         k *= 2.0;
@@ -107,48 +107,57 @@ float ccWeightedParameter(float x1, float x2, float ratio) {
     return result;
 }
 float ccRealCurve(uint descriptor, float time) {
-    uint keys = uint(ccParam(descriptor)), count = uint(ccParam(descriptor + 1u));
+    uint keys = uint(ccParam(descriptor + PARTICLE_SPLINE_KEYS));
+    uint count = uint(ccParam(descriptor + PARTICLE_SPLINE_COUNT));
     if (count == 0u) return 0.0;
-    uint last = keys + (count - 1u) * 9u;
-    float firstTime = ccParam(keys), lastTime = ccParam(last);
+    uint last = keys + (count - 1u) * PARTICLE_KEY_WORDS;
+    float firstTime = ccParam(keys + PARTICLE_KEY_TIME);
+    float lastTime = ccParam(last + PARTICLE_KEY_TIME);
     if (time < firstTime || time > lastTime) {
         bool before = time < firstTime;
-        uint mode = uint(ccParam(descriptor + (before ? 2u : 3u))), endKey = before ? keys : last;
-        if (count < 2u || mode == 1u || mode > 3u) return ccParam(endKey + 1u);
-        if (mode == 0u) {
-            uint other = before ? keys + 9u : last - 9u;
-            return ccParam(endKey + 1u) + (time - ccParam(endKey)) * (ccParam(other + 1u) - ccParam(endKey + 1u)) /
-                                              (ccParam(other) - ccParam(endKey));
+        uint mode = uint(ccParam(descriptor + (before ? PARTICLE_SPLINE_PRE_EXTRAPOLATION : PARTICLE_SPLINE_POST_EXTRAPOLATION)));
+        uint endKey = before ? keys : last;
+        if (count < 2u || mode == PARTICLE_EXTRAPOLATION_CLAMP || mode > PARTICLE_EXTRAPOLATION_PING_PONG) return ccParam(endKey + PARTICLE_KEY_VALUE);
+        if (mode == PARTICLE_EXTRAPOLATION_LINEAR) {
+            uint other = before ? keys + PARTICLE_KEY_WORDS : last - PARTICLE_KEY_WORDS;
+            float endValue = ccParam(endKey + PARTICLE_KEY_VALUE);
+            float endTime = ccParam(endKey + PARTICLE_KEY_TIME);
+            return endValue + (time - endTime) * (ccParam(other + PARTICLE_KEY_VALUE) - endValue) / (ccParam(other + PARTICLE_KEY_TIME) - endTime);
         }
         float duration = lastTime - firstTime;
-        float t = mod(time - firstTime, mode == 2u ? duration : 2.0 * duration);
-        time = firstTime + (mode == 2u ? t : duration - abs(t - duration));
+        float t = mod(time - firstTime, mode == PARTICLE_EXTRAPOLATION_LOOP ? duration : 2.0 * duration);
+        time = firstTime + (mode == PARTICLE_EXTRAPOLATION_LOOP ? t : duration - abs(t - duration));
     }
     int lo = 0, hi = int(count) - 1;
     while (lo <= hi) {
         int mid = (lo + hi) / 2;
-        uint key = keys + uint(mid) * 9u;
-        float t = ccParam(key);
+        uint key = keys + uint(mid) * PARTICLE_KEY_WORDS;
+        float t = ccParam(key + PARTICLE_KEY_TIME);
         if (t > time + 1e-6)
             hi = mid - 1;
         else if (t < time - 1e-6)
             lo = mid + 1;
         else
-            return ccParam(key + 1u);
+            return ccParam(key + PARTICLE_KEY_VALUE);
     }
-    uint a = keys + uint(lo - 1) * 9u, b = a + 9u;
-    float dt = ccParam(b) - ccParam(a), ratio = (time - ccParam(a)) / dt;
-    float v0 = ccParam(a + 1u), v1 = ccParam(b + 1u);
-    uint mode = uint(ccParam(a + 2u));
-    if (mode == 0u) return mix(v0, v1, ccEasing(uint(ccParam(a + 3u)), ratio));
-    if (mode != 2u) return v0;
-    float tangent0 = ccParam(a + 5u), tangent1 = ccParam(b + 4u);
-    bool weighted0 = (uint(ccParam(a + 8u)) & 2u) != 0u, weighted1 = (uint(ccParam(b + 8u)) & 1u) != 0u;
+    uint a = keys + uint(lo - 1) * PARTICLE_KEY_WORDS;
+    uint b = a + PARTICLE_KEY_WORDS;
+    float dt = ccParam(b + PARTICLE_KEY_TIME) - ccParam(a + PARTICLE_KEY_TIME);
+    float ratio = (time - ccParam(a + PARTICLE_KEY_TIME)) / dt;
+    float v0 = ccParam(a + PARTICLE_KEY_VALUE);
+    float v1 = ccParam(b + PARTICLE_KEY_VALUE);
+    uint mode = uint(ccParam(a + PARTICLE_KEY_INTERPOLATION));
+    if (mode == PARTICLE_INTERPOLATION_LINEAR) return mix(v0, v1, ccEasing(uint(ccParam(a + PARTICLE_KEY_EASING)), ratio));
+    if (mode != PARTICLE_INTERPOLATION_CUBIC) return v0;
+    float tangent0 = ccParam(a + PARTICLE_KEY_RIGHT_TANGENT);
+    float tangent1 = ccParam(b + PARTICLE_KEY_LEFT_TANGENT);
+    bool weighted0 = (uint(ccParam(a + PARTICLE_KEY_WEIGHT_MODE)) & PARTICLE_TANGENT_WEIGHT_RIGHT) != 0u;
+    bool weighted1 = (uint(ccParam(b + PARTICLE_KEY_WEIGHT_MODE)) & PARTICLE_TANGENT_WEIGHT_LEFT) != 0u;
     if (!weighted0 && !weighted1) return ccBezier(v0, v0 + tangent0 * dt / 3.0, v1 - tangent1 * dt / 3.0, v1, ratio);
-    float w0 = weighted0 ? ccParam(a + 7u) : sqrt(dt * dt + (dt * tangent0) * (dt * tangent0)) / 3.0;
-    float w1 = weighted1 ? ccParam(b + 6u) : sqrt(dt * dt + (dt * tangent1) * (dt * tangent1)) / 3.0;
+    float w0 = weighted0 ? ccParam(a + PARTICLE_KEY_RIGHT_WEIGHT) : sqrt(dt * dt + (dt * tangent0) * (dt * tangent0)) / 3.0;
+    float w1 = weighted1 ? ccParam(b + PARTICLE_KEY_LEFT_WEIGHT) : sqrt(dt * dt + (dt * tangent1) * (dt * tangent1)) / 3.0;
     float angle0 = atan(tangent0), angle1 = atan(tangent1);
-    float x1 = (cos(angle0) * w0 + ccParam(a) - ccParam(a)) / dt;
-    float x2 = (-cos(angle1) * w1 + ccParam(b) - ccParam(a)) / dt;
+    float x1 = (cos(angle0) * w0 + ccParam(a + PARTICLE_KEY_TIME) - ccParam(a + PARTICLE_KEY_TIME)) / dt;
+    float x2 = (-cos(angle1) * w1 + ccParam(b + PARTICLE_KEY_TIME) - ccParam(a + PARTICLE_KEY_TIME)) / dt;
     return ccBezier(v0, sin(angle0) * w0 + v0, -sin(angle1) * w1 + v1, v1, ccWeightedParameter(x1, x2, ratio));
 }

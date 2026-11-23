@@ -4,14 +4,14 @@ precision highp float;
 
 void main() {
     uint i = ccParticleInvocationIndex();
-    if (i >= control[2]) return;
+    if (i >= control[PARTICLE_SIM_CTRL_ACTIVE_COUNT]) return;
     uint prefix = control[scratch.y + i] + control[scratch.z + ccParticleGroupIndex()];
     ParticleState p = inputState[i];
     if (control[scratch.x + i] != 0u) {
         outputState[prefix] = p;
         control[identityOffsets.y + p.identity.y] = prefix;
     } else {
-        control[scratch.w + control[9] + i - prefix] = p.identity.y;
-        control[identityOffsets.y + p.identity.y] = 0xffffffffu;
+        control[scratch.w + control[PARTICLE_SIM_CTRL_FREE_TOP_AFTER] + i - prefix] = p.identity.y;
+        control[identityOffsets.y + p.identity.y] = PARTICLE_INVALID_INDEX;
     }
 }

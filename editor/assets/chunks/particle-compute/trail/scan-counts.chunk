@@ -6,7 +6,9 @@ shared uint sums[64];
 void main() {
     uint h = ccParticleInvocationIndex(), lane = gl_LocalInvocationID.x;
     uint value = 0u;
-    if (h < limits.x) value = control[metaBase(h) + 4u];
+    if (h < limits.x) {
+        value = control[metaBase(h) + PARTICLE_TRAIL_META_INDEX_COUNT];
+    }
     sums[lane] = value;
     barrier();
     for (uint distance = 1u; distance < 64u; distance *= 2u) {
@@ -16,6 +18,10 @@ void main() {
         sums[lane] += addend;
         barrier();
     }
-    if (h < limits.x) control[metaBase(h) + 5u] = sums[lane] - value;
-    if (lane == 63u && ccParticleGroupIndex() < limits.z) control[8u + ccParticleGroupIndex()] = sums[lane];
+    if (h < limits.x) {
+        control[metaBase(h) + PARTICLE_TRAIL_META_INDEX_PREFIX] = sums[lane] - value;
+    }
+    if (lane == 63u && ccParticleGroupIndex() < limits.z) {
+        control[PARTICLE_TRAIL_CTRL_HEADER_WORDS + ccParticleGroupIndex()] = sums[lane];
+    }
 }

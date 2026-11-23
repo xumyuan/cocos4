@@ -4,33 +4,40 @@ precision highp float;
 
 void main() {
     if (ccParticleInvocationIndex() != 0u) return;
-    uint accepted = min(counts.y, counts.x - control[0]);
-    control[1] = accepted;
-    control[2] = control[0] + accepted;
-    control[3] = 0u;
-    control[8] = control[4];
-    control[9] = control[4] - accepted;
-    float total = uintBitsToFloat(control[10]), last = uintBitsToFloat(control[11]);
+    uint accepted = min(counts.y, counts.x - control[PARTICLE_SIM_CTRL_LIVE_COUNT]);
+    control[PARTICLE_SIM_CTRL_ACCEPTED] = accepted;
+    control[PARTICLE_SIM_CTRL_ACTIVE_COUNT] = control[PARTICLE_SIM_CTRL_LIVE_COUNT] + accepted;
+    control[PARTICLE_SIM_CTRL_SURVIVOR_COUNT] = 0u;
+    control[PARTICLE_SIM_CTRL_FREE_TOP_BEFORE] = control[PARTICLE_SIM_CTRL_FREE_COUNT];
+    control[PARTICLE_SIM_CTRL_FREE_TOP_AFTER] = control[PARTICLE_SIM_CTRL_FREE_COUNT] - accepted;
+    float total = uintBitsToFloat(control[PARTICLE_SIM_CTRL_ARC_TOTAL]);
+    float last = uintBitsToFloat(control[PARTICLE_SIM_CTRL_ARC_LAST_TIME]);
     for (uint batch = 0u; batch < counts.z; batch++) {
-        uint begin = birthWords[batch * 4u], end = birthWords[batch * 4u + 1u], b = birthWords[batch * 4u + 2u];
+        uint header = batch * PARTICLE_BIRTH_BATCH_HEADER_WORDS;
+        uint begin = birthWords[header + PARTICLE_BIRTH_BATCH_BEGIN];
+        uint end = birthWords[header + PARTICLE_BIRTH_BATCH_END];
+        uint snapshot = birthWords[header + PARTICLE_BIRTH_BATCH_SNAPSHOT];
         float angle = 0.0;
-        if (begin < accepted && end > begin && birthRead(b, 2u) > 0.5) {
-            float now = birthRead(b, 19u);
-            int mode = int(birthRead(b, 10u)), shape = int(birthRead(b, 3u));
-            if ((shape == 1 || shape == 2) && mode != 0) {
-                total += 6.28318530718 * birthRead(b, 52u) * (now - last);
+        if (begin < accepted && end > begin && birthRead(snapshot, PARTICLE_BIRTH_SHAPE_ENABLED) > 0.5) {
+            float now = birthRead(snapshot, PARTICLE_BIRTH_TIME);
+            uint mode = uint(birthRead(snapshot, PARTICLE_BIRTH_ARC_MODE));
+            uint shape = uint(birthRead(snapshot, PARTICLE_BIRTH_SHAPE_TYPE));
+            if ((shape == PARTICLE_SHAPE_CIRCLE || shape == PARTICLE_SHAPE_CONE) && mode != PARTICLE_ARC_MODE_RANDOM) {
+                total += 6.28318530718 * birthRead(snapshot, PARTICLE_BIRTH_ARC_SPEED) * (now - last);
                 angle = total;
-                float arc = birthRead(b, 9u), spread = birthRead(b, 51u);
+                float arc = birthRead(snapshot, PARTICLE_BIRTH_ARC);
+                float spread = birthRead(snapshot, PARTICLE_BIRTH_ARC_SPREAD);
                 if (arc > 0.0) {
                     if (spread != 0.0) angle = floor(angle / (arc * spread)) * arc * spread;
-                    angle = mode == 2 ? arc - abs(mod(angle, 2.0 * arc) - arc) : mod(angle, arc);
-                } else
+                    angle = mode == PARTICLE_ARC_MODE_PING_PONG ? arc - abs(mod(angle, 2.0 * arc) - arc) : mod(angle, arc);
+                } else {
                     angle = 0.0;
+                }
             }
             last = now;
         }
         control[identityOffsets.z + batch] = floatBitsToUint(angle);
     }
-    control[10] = floatBitsToUint(total);
-    control[11] = floatBitsToUint(last);
+    control[PARTICLE_SIM_CTRL_ARC_TOTAL] = floatBitsToUint(total);
+    control[PARTICLE_SIM_CTRL_ARC_LAST_TIME] = floatBitsToUint(last);
 }

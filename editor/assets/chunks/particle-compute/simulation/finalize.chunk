@@ -4,7 +4,7 @@ precision highp float;
 
 void main() {
     if (ccParticleInvocationIndex() != 0u) return;
-    control[4] = control[9] + control[2] - control[3];
-    control[7] += control[1];
-    control[0] = control[3];
+    control[PARTICLE_SIM_CTRL_FREE_COUNT] = control[PARTICLE_SIM_CTRL_FREE_TOP_AFTER] + control[PARTICLE_SIM_CTRL_ACTIVE_COUNT] - control[PARTICLE_SIM_CTRL_SURVIVOR_COUNT];
+    control[PARTICLE_SIM_CTRL_EMITTED_TOTAL] += control[PARTICLE_SIM_CTRL_ACCEPTED];
+    control[PARTICLE_SIM_CTRL_LIVE_COUNT] = control[PARTICLE_SIM_CTRL_SURVIVOR_COUNT];
 }

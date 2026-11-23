@@ -7,7 +7,7 @@ void main() {
     uint i = ccParticleInvocationIndex();
     if (i >= counts.x) return;
     uint alive = 0u;
-    if (i < control[2]) {
+    if (i < control[PARTICLE_SIM_CTRL_ACTIVE_COUNT]) {
         ParticleState p = inputState[i];
         // Compensated subtraction limits lifetime drift against the CPU's f64 accumulator.
         // size.w is simulation-only; all size modules and renderers use size.xyz.

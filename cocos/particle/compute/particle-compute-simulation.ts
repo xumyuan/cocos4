@@ -4,7 +4,7 @@ import {
     API, Buffer, BufferInfo, BufferUsageBit, BufferViewInfo, DescriptorSet,
     DescriptorSetInfo, Device, DispatchInfo, MemoryUsageBit, PipelineState,
 } from '../../gfx';
-import { PARTICLE_COMPUTE_BIRTH_FLOATS, ParticleComputeBirthBatch } from './particle-compute-birth';
+import { ComputeBirthBatchOffset, PARTICLE_COMPUTE_BIRTH_FLOATS, ParticleComputeBirthBatch } from './particle-compute-birth';
 import { PARTICLE_COMPUTE_MODULE_HEADER_FLOATS } from './particle-compute-curves';
 import {
     createParticleComputeDispatch, flushParticleComputeCommands, getParticleComputeBindingLayout,
@@ -14,8 +14,21 @@ import {
 import type { Disposable, ParticleComputeBindingLayout } from './particle-compute-effect';
 import { ComputeModuleOffset, ComputeShaderFeature } from './particle-compute-modules';
 
+export const ComputeSimControlOffset = {
+    LIVE_COUNT: 0,
+    ACCEPTED: 1,
+    ACTIVE_COUNT: 2,
+    SURVIVOR_COUNT: 3,
+    FREE_COUNT: 4,
+    EMITTED_TOTAL: 7,
+    FREE_TOP_BEFORE: 8,
+    FREE_TOP_AFTER: 9,
+    ARC_TOTAL: 10,
+    ARC_LAST_TIME: 11,
+    HEADER_WORDS: 16,
+} as const;
+
 const MAX_BATCHES = 1024;
-const BIRTH_BATCH_HEADER_WORDS = 4;
 const SCAN_PARAM_WORD_OFFSET = 20;
 const FRAME_PARAM_WORDS = SCAN_PARAM_WORD_OFFSET + 4;
 const FRAME_PARAM_SIZE = FRAME_PARAM_WORDS * Uint32Array.BYTES_PER_ELEMENT;
@@ -93,7 +106,7 @@ export class ParticleComputeSimulation {
     private readonly _paramStride: number;
     private readonly _paramWords: Uint32Array;
     private readonly _paramFloats: Float32Array;
-    private readonly _birthWords = new Uint32Array(MAX_BATCHES * (BIRTH_BATCH_HEADER_WORDS + PARTICLE_COMPUTE_BIRTH_FLOATS));
+    private readonly _birthWords = new Uint32Array(MAX_BATCHES * (ComputeBirthBatchOffset.HEADER_WORDS + PARTICLE_COMPUTE_BIRTH_FLOATS));
     private readonly _birthFloats = new Float32Array(this._birthWords.buffer);
     private readonly _groups: number;
     private readonly _seed: number;
@@ -127,7 +140,7 @@ export class ParticleComputeSimulation {
             return own(_device.createBuffer(new BufferInfo(bufferUsage, MemoryUsageBit.DEVICE, bytes, stride)));
         };
 
-        const flags = 16;
+        const flags = ComputeSimControlOffset.HEADER_WORDS;
         const prefix = flags + capacity;
         const sums = prefix + capacity;
         const scanLevels = createScanLevels(this._groups);
@@ -237,18 +250,18 @@ export class ParticleComputeSimulation {
         }
 
         let requested = 0;
-        let offset = batches.length * BIRTH_BATCH_HEADER_WORDS;
+        let offset = batches.length * ComputeBirthBatchOffset.HEADER_WORDS;
         for (let i = 0; i < batches.length; i++) {
             const batch = batches[i];
             if (!Number.isSafeInteger(batch.count) || batch.count < 0 || batch.data.length !== PARTICLE_COMPUTE_BIRTH_FLOATS) {
                 throw new RangeError('Invalid particle birth batch');
             }
             const count = Math.min(batch.count, this.capacity - requested);
-            const header = i * BIRTH_BATCH_HEADER_WORDS;
-            this._birthWords[header] = requested;
+            const header = i * ComputeBirthBatchOffset.HEADER_WORDS;
+            this._birthWords[header + ComputeBirthBatchOffset.BEGIN] = requested;
             requested += count;
-            this._birthWords[header + 1] = requested;
-            this._birthWords[header + 2] = offset;
+            this._birthWords[header + ComputeBirthBatchOffset.END] = requested;
+            this._birthWords[header + ComputeBirthBatchOffset.SNAPSHOT] = offset;
             this._birthFloats.set(batch.data, offset);
             offset += PARTICLE_COMPUTE_BIRTH_FLOATS;
         }
@@ -308,8 +321,7 @@ export class ParticleComputeSimulation {
                 const params = slice + SCAN_PARAM_WORD_OFFSET;
                 this._paramWords[params] = level.count;
                 this._paramWords[params + 1] = sums + level.offset;
-                // Finalize reads the total from control[3].
-                this._paramWords[params + 2] = parent ? sums + parent.offset : 3;
+                this._paramWords[params + 2] = parent ? sums + parent.offset : ComputeSimControlOffset.SURVIVOR_COUNT;
                 this._paramWords[params + 3] = Math.ceil(level.count / PARTICLE_COMPUTE_WORKGROUP_SIZE);
             }
             this._parameters.update(this._paramWords.buffer, levels.length * this._paramStride + FRAME_PARAM_SIZE);
@@ -350,7 +362,8 @@ export class ParticleComputeSimulation {
         flushParticleComputeCommands(this._device);
         const epoch = this._epoch;
         const requestedAtStart = this._totalRequested;
-        const bytes = await this._device.readBuffer(this._control, 0, 4);
+        const wordBytes = Uint32Array.BYTES_PER_ELEMENT;
+        const bytes = await this._device.readBuffer(this._control, ComputeSimControlOffset.LIVE_COUNT * wordBytes, wordBytes);
         const count = new Uint32Array(bytes)[0];
         if (!this._destroyed && this._epoch === epoch) {
             const addedAfter = this._totalRequested - requestedAtStart;

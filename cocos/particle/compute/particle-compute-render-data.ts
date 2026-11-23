@@ -10,10 +10,29 @@ import {
 } from './particle-compute-effect';
 import type { Disposable, ParticleComputeBindingLayout } from './particle-compute-effect';
 
+export const ComputeRenderVertexOffset = {
+    POSITION_X: 0,
+    POSITION_Y: 1,
+    POSITION_Z: 2,
+    FRAME: 3,
+    SIZE_X: 4,
+    SIZE_Y: 5,
+    SIZE_Z: 6,
+    ROTATION_X: 7,
+    ROTATION_Y: 8,
+    ROTATION_Z: 9,
+    COLOR: 10,
+    WORDS: 11,
+    VELOCITY_X: 11,
+    VELOCITY_Y: 12,
+    VELOCITY_Z: 13,
+    STRETCHED_WORDS: 14,
+} as const;
+
 /** CPU particle material's instanced stream: 10 floats followed by packed RGBA8. */
-const PARTICLE_COMPUTE_RENDER_STRIDE = 44;
+const PARTICLE_COMPUTE_RENDER_STRIDE = ComputeRenderVertexOffset.WORDS * Uint32Array.BYTES_PER_ELEMENT;
 /** Stretched Billboard adds ultimate velocity.xyz after packed color. */
-const PARTICLE_COMPUTE_STRETCHED_RENDER_STRIDE = 56;
+const PARTICLE_COMPUTE_STRETCHED_RENDER_STRIDE = ComputeRenderVertexOffset.STRETCHED_WORDS * Uint32Array.BYTES_PER_ELEMENT;
 
 const RENDER_RESOURCES = ['RenderParams', 'SimulationState', 'SimulationCounters', 'InstanceVertices', 'IndirectArguments'] as const;
 

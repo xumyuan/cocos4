@@ -6,7 +6,61 @@ import { RealCurve } from '../../core/curves/curve';
 
 export const DEFAULT_PARTICLE_COMPUTE_CURVE_SAMPLES = 256;
 export const PARTICLE_COMPUTE_MODULE_HEADER_FLOATS = 128;
-export const PACKED_SCALAR_CURVE_COUNT_OFFSET = 2;
+
+export const ComputeScalarOffset = {
+    LOW: 0,
+    HIGH: 1,
+    COUNT: 2,
+    MODE_OR_MULTIPLIER: 3,
+    WORDS: 4,
+} as const;
+
+export const ComputeColorOffset = {
+    MODE: 0,
+    FIRST: 1,
+    SECOND: 2,
+    RESERVED: 3,
+    WORDS: 4,
+} as const;
+
+export const ComputeGradientOffset = {
+    COLORS: 0,
+    COLOR_COUNT: 1,
+    ALPHAS: 2,
+    ALPHA_COUNT: 3,
+    MODE: 4,
+    WORDS: 5,
+} as const;
+
+export const ComputeGradientKeyOffset = {
+    TIME: 0,
+    VALUE: 1,
+    ALPHA_WORDS: 2,
+    COLOR_WORDS: 4,
+} as const;
+
+export const ComputeSplineOffset = {
+    KEYS: 0,
+    COUNT: 1,
+    PRE_EXTRAPOLATION: 2,
+    POST_EXTRAPOLATION: 3,
+    WORDS: 4,
+} as const;
+
+export const ComputeKeyOffset = {
+    TIME: 0,
+    VALUE: 1,
+    INTERPOLATION: 2,
+    EASING: 3,
+    LEFT_TANGENT: 4,
+    RIGHT_TANGENT: 5,
+    LEFT_WEIGHT: 6,
+    RIGHT_WEIGHT: 7,
+    WEIGHT_MODE: 8,
+    WORDS: 9,
+} as const;
+
+export const PACKED_SCALAR_CURVE_COUNT_OFFSET = ComputeScalarOffset.COUNT;
 
 const evaluateRange = CurveRange.prototype.evaluate;
 const evaluateSpline = RealCurve.prototype.evaluate;
@@ -87,7 +141,7 @@ export class ParticleComputeCurvePacker {
             const low = this.spline(mode === Mode.Curve ? source.spline : source.splineMin);
             const high = mode === Mode.Curve ? low : this.spline(source.splineMax);
             // Negative count distinguishes keyframes from the legacy sampled evaluator ABI.
-            return this.append([low, high, -1, source.multiplier]);
+            return this.scalarDescriptor(low, high, -1, source.multiplier);
         }
 
         const evaluate = (t: number, random: number): number => finite(
@@ -119,7 +173,17 @@ export class ParticleComputeCurvePacker {
 
         const minOffset = this.append(low);
         const maxOffset = mode === Mode.TwoCurves || mode === Mode.TwoConstants ? this.append(high) : minOffset;
-        return this.append([minOffset, maxOffset, count, mode]);
+        return this.scalarDescriptor(minOffset, maxOffset, count, mode);
+    }
+
+    private scalarDescriptor (low: number, high: number, count: number, modeOrMultiplier: number): number {
+        const offsets = ComputeScalarOffset;
+        const descriptor = new Array<number>(offsets.WORDS);
+        descriptor[offsets.LOW] = low;
+        descriptor[offsets.HIGH] = high;
+        descriptor[offsets.COUNT] = count;
+        descriptor[offsets.MODE_OR_MULTIPLIER] = modeOrMultiplier;
+        return this.append(descriptor);
     }
 
     private spline (curve: RealCurve): number {
@@ -132,20 +196,25 @@ export class ParticleComputeCurvePacker {
             }
             previous = time;
             const key = curve.getKeyframeValue(i);
-            keys.push(
-                time,
-                key.value,
-                key.interpolationMode,
-                key.easingMethod,
-                key.leftTangent,
-                key.rightTangent,
-                key.leftTangentWeight,
-                key.rightTangentWeight,
-                key.tangentWeightMode,
-            );
+            const base = i * ComputeKeyOffset.WORDS;
+            keys[base + ComputeKeyOffset.TIME] = time;
+            keys[base + ComputeKeyOffset.VALUE] = key.value;
+            keys[base + ComputeKeyOffset.INTERPOLATION] = key.interpolationMode;
+            keys[base + ComputeKeyOffset.EASING] = key.easingMethod;
+            keys[base + ComputeKeyOffset.LEFT_TANGENT] = key.leftTangent;
+            keys[base + ComputeKeyOffset.RIGHT_TANGENT] = key.rightTangent;
+            keys[base + ComputeKeyOffset.LEFT_WEIGHT] = key.leftTangentWeight;
+            keys[base + ComputeKeyOffset.RIGHT_WEIGHT] = key.rightTangentWeight;
+            keys[base + ComputeKeyOffset.WEIGHT_MODE] = key.tangentWeightMode;
         }
-        const offset = this.append(keys);
-        return this.append([offset, curve.keyFramesCount, curve.preExtrapolation, curve.postExtrapolation]);
+
+        const offsets = ComputeSplineOffset;
+        const descriptor = new Array<number>(offsets.WORDS);
+        descriptor[offsets.KEYS] = this.append(keys);
+        descriptor[offsets.COUNT] = curve.keyFramesCount;
+        descriptor[offsets.PRE_EXTRAPOLATION] = curve.preExtrapolation;
+        descriptor[offsets.POST_EXTRAPOLATION] = curve.postExtrapolation;
+        return this.append(descriptor);
     }
 
     public gradient (gradient: ComputeGradient): number {
@@ -157,22 +226,25 @@ export class ParticleComputeCurvePacker {
         for (const key of gradient.alphaKeys) {
             alphas.push(key.time, key.alpha / 255);
         }
-        const colorsOffset = this.append(colors);
-        const alphasOffset = this.append(alphas);
-        return this.append([colorsOffset, gradient.colorKeys.length, alphasOffset, gradient.alphaKeys.length, gradient.mode]);
+
+        const offsets = ComputeGradientOffset;
+        const descriptor = new Array<number>(offsets.WORDS);
+        descriptor[offsets.COLORS] = this.append(colors);
+        descriptor[offsets.COLOR_COUNT] = gradient.colorKeys.length;
+        descriptor[offsets.ALPHAS] = this.append(alphas);
+        descriptor[offsets.ALPHA_COUNT] = gradient.alphaKeys.length;
+        descriptor[offsets.MODE] = gradient.mode;
+        return this.append(descriptor);
     }
 
     public color (range?: ComputeColorRange | null): number {
         const Mode = GradientRange.Mode;
-        const white = [1, 1, 1, 1];
-        if (!range) {
-            return this.append([Mode.Color, this.append(white), 0, 0]);
-        }
-
         const rgba = (color: ComputeColor): number[] => [color.r / 255, color.g / 255, color.b / 255, color.a / 255];
-        let first = 0;
+        let first: number;
         let second = 0;
-        if (range.mode === Mode.Color) {
+        if (!range) {
+            first = this.append([1, 1, 1, 1]);
+        } else if (range.mode === Mode.Color) {
             first = this.append(rgba(range.color));
         } else if (range.mode === Mode.TwoColors) {
             first = this.append(rgba(range.colorMin));
@@ -186,7 +258,14 @@ export class ParticleComputeCurvePacker {
             }
             first = this.gradient(range.gradient);
         }
-        return this.append([range.mode, first, second, 0]);
+
+        const offsets = ComputeColorOffset;
+        const descriptor = new Array<number>(offsets.WORDS);
+        descriptor[offsets.MODE] = range ? range.mode : Mode.Color;
+        descriptor[offsets.FIRST] = first;
+        descriptor[offsets.SECOND] = second;
+        descriptor[offsets.RESERVED] = 0;
+        return this.append(descriptor);
     }
 
     public finish (): Float32Array {

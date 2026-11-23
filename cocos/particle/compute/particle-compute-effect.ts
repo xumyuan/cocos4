@@ -8,6 +8,14 @@ import type { Buffer, DescriptorSet, DescriptorSetLayout, Shader, ShaderInfo } f
 import type { MacroRecord } from '../../render-scene/core/pass-utils';
 import type { ProgramLibrary } from '../../rendering/custom/private';
 
+export const ComputeDrawOffset = {
+    INDEX_COUNT: 0,
+    INSTANCE_COUNT: 1,
+    FIRST_INDEX: 2,
+    BASE_VERTEX: 3,
+    FIRST_INSTANCE: 4,
+} as const;
+
 // Match local_size_x and the ParticleState layout in the compute shaders.
 export const PARTICLE_COMPUTE_WORKGROUP_SIZE = 64;
 export const PARTICLE_COMPUTE_STATE_STRIDE = 176;

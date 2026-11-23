@@ -5,26 +5,29 @@ precision highp float;
 
 void emitPair(uint vertex, vec3 position, vec3 tangent, float width, uint direction, float u, uint packedColor) {
     for (uint side = 0u; side < 2u; ++side) {
-        uint at = (vertex + side) * 11u;
-        vertices[at] = floatBitsToUint(position.x);
-        vertices[at + 1u] = floatBitsToUint(position.y);
-        vertices[at + 2u] = floatBitsToUint(position.z);
-        vertices[at + 3u] = floatBitsToUint(float(side == 0u ? direction : 1u - direction));
-        vertices[at + 4u] = floatBitsToUint(width);
-        vertices[at + 5u] = floatBitsToUint(u);
-        vertices[at + 6u] = floatBitsToUint(float(side));
-        vertices[at + 7u] = floatBitsToUint(tangent.x);
-        vertices[at + 8u] = floatBitsToUint(tangent.y);
-        vertices[at + 9u] = floatBitsToUint(tangent.z);
-        vertices[at + 10u] = packedColor;
+        uint at = (vertex + side) * PARTICLE_TRAIL_VERTEX_WORDS;
+        vertices[at + PARTICLE_TRAIL_VERTEX_POSITION_X] = floatBitsToUint(position.x);
+        vertices[at + PARTICLE_TRAIL_VERTEX_POSITION_Y] = floatBitsToUint(position.y);
+        vertices[at + PARTICLE_TRAIL_VERTEX_POSITION_Z] = floatBitsToUint(position.z);
+        vertices[at + PARTICLE_TRAIL_VERTEX_DIRECTION] = floatBitsToUint(float(side == 0u ? direction : 1u - direction));
+        vertices[at + PARTICLE_TRAIL_VERTEX_WIDTH] = floatBitsToUint(width);
+        vertices[at + PARTICLE_TRAIL_VERTEX_U] = floatBitsToUint(u);
+        vertices[at + PARTICLE_TRAIL_VERTEX_V] = floatBitsToUint(float(side));
+        vertices[at + PARTICLE_TRAIL_VERTEX_TANGENT_X] = floatBitsToUint(tangent.x);
+        vertices[at + PARTICLE_TRAIL_VERTEX_TANGENT_Y] = floatBitsToUint(tangent.y);
+        vertices[at + PARTICLE_TRAIL_VERTEX_TANGENT_Z] = floatBitsToUint(tangent.z);
+        vertices[at + PARTICLE_TRAIL_VERTEX_COLOR] = packedColor;
     }
 }
 void main() {
     uint h = ccParticleInvocationIndex();
     if (h >= limits.x) return;
-    uint m = metaBase(h), edges = control[m + 4u] / 6u;
+    uint m = metaBase(h);
+    uint edges = control[m + PARTICLE_TRAIL_META_INDEX_COUNT] / 6u;
     if (edges == 0u) return;
-    uint head = control[m + 2u], count = control[m + 3u], index = control[mapBase() + h];
+    uint head = control[m + PARTICLE_TRAIL_META_HEAD];
+    uint count = control[m + PARTICLE_TRAIL_META_COUNT];
+    uint index = control[mapBase() + h];
     ParticleState p = particles[index];
     uint vertex = h * (limits.y + 1u) * 2u;
     uint pairCount = edges == count ? count + 1u : count;
@@ -58,10 +61,10 @@ void main() {
             randKey = p.identity.x ^ uint(tick.w);
             baseColor = p.color;
         }
-        vec4 tint = ccColor(2u, u, 1.0, ccParticleRandomPair(randKey));
+        vec4 tint = ccColor(PARTICLE_TRAIL_MOD_COLOR_OVER_TRAIL, u, 1.0, ccParticleRandomPair(randKey));
         emitPair(vertex + j * 2u, pos, tanVec, width, dir, u, packColor(baseColor * tint));
     }
-    uint base = control[m + 5u] + control[8u + ccParticleGroupIndex()];
+    uint base = control[m + PARTICLE_TRAIL_META_INDEX_PREFIX] + control[PARTICLE_TRAIL_CTRL_HEADER_WORDS + ccParticleGroupIndex()];
     for (uint j = 0u; j < edges; ++j) {
         uint v = vertex + j * 2u, at = base + j * 6u;
         indices[at] = v;

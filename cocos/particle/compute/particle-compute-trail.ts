@@ -9,20 +9,18 @@ import type { MacroRecord } from '../../render-scene/core/pass-utils';
 import GradientRange from '../animator/gradient-range';
 import { ParticleSpace } from '../enum';
 import {
-    ComputeColorRange, ComputeScalar, DEFAULT_PARTICLE_COMPUTE_CURVE_SAMPLES,
+    ComputeColorOffset, ComputeColorRange, ComputeScalar, DEFAULT_PARTICLE_COMPUTE_CURVE_SAMPLES,
     PACKED_SCALAR_CURVE_COUNT_OFFSET, ParticleComputeCurvePacker,
 } from './particle-compute-curves';
 import {
-    createParticleComputeDispatch, flushParticleComputeCommands, getParticleComputeBindingLayout,
+    ComputeDrawOffset, createParticleComputeDispatch, flushParticleComputeCommands, getParticleComputeBindingLayout,
     getParticleComputeProgram, PARTICLE_COMPUTE_STATE_STRIDE, PARTICLE_COMPUTE_WORKGROUP_SIZE,
     ParticleComputeStateSets, runParticleComputePass,
     validateParticleComputeBuffer, validateParticleComputeCapacity,
 } from './particle-compute-effect';
 import type { Disposable, ParticleComputeBindingLayout } from './particle-compute-effect';
 
-const TRAIL_VERTEX_STRIDE = 44;
-
-const ComputeTrailOffset = {
+export const ComputeTrailOffset = {
     WIDTH: 0,
     COLOR_OVERTIME: 1,
     COLOR_OVER_TRAIL: 2,
@@ -30,7 +28,41 @@ const ComputeTrailOffset = {
     COLOR_FROM_PARTICLE: 4,
     MIN_DISTANCE_SQUARED: 5,
     SHADER_FEATURES: 6,
+    HEADER_WORDS: 16,
 } as const;
+
+export const ComputeTrailControlOffset = {
+    ...ComputeDrawOffset,
+    OVERFLOW: 5,
+    HEADER_WORDS: 8,
+} as const;
+
+export const ComputeTrailMetaOffset = {
+    GENERATION: 0,
+    PHASE: 1,
+    HEAD: 2,
+    COUNT: 3,
+    INDEX_COUNT: 4,
+    INDEX_PREFIX: 5,
+    WORDS: 8,
+} as const;
+
+export const ComputeTrailVertexOffset = {
+    POSITION_X: 0,
+    POSITION_Y: 1,
+    POSITION_Z: 2,
+    DIRECTION: 3,
+    WIDTH: 4,
+    U: 5,
+    V: 6,
+    TANGENT_X: 7,
+    TANGENT_Y: 8,
+    TANGENT_Z: 9,
+    COLOR: 10,
+    WORDS: 11,
+} as const;
+
+const TRAIL_VERTEX_STRIDE = ComputeTrailVertexOffset.WORDS * Uint32Array.BYTES_PER_ELEMENT;
 
 const ComputeTrailShaderFeature = {
     WIDTH_SPLINE: 1 << 0,
@@ -84,7 +116,7 @@ export function compileParticleComputeTrail (
         throw new RangeError('Trail minimum distance must be finite and nonnegative');
     }
 
-    const packer = new ParticleComputeCurvePacker(16, options.samples ?? DEFAULT_PARTICLE_COMPUTE_CURVE_SAMPLES);
+    const packer = new ParticleComputeCurvePacker(ComputeTrailOffset.HEADER_WORDS, options.samples ?? DEFAULT_PARTICLE_COMPUTE_CURVE_SAMPLES);
     const { values } = packer;
     const offsets = ComputeTrailOffset;
     values[offsets.WIDTH] = packer.scalar(source.widthRatio, 1);
@@ -96,7 +128,7 @@ export function compileParticleComputeTrail (
 
     const hasSpline = values[values[offsets.WIDTH] + PACKED_SCALAR_CURVE_COUNT_OFFSET] < 0;
     const isGradient = (slot: number): boolean => {
-        const mode = values[values[slot]];
+        const mode = values[values[slot] + ComputeColorOffset.MODE];
         return mode !== GradientRange.Mode.Color && mode !== GradientRange.Mode.TwoColors;
     };
     const feature = ComputeTrailShaderFeature;
@@ -177,6 +209,7 @@ export class ParticleComputeTrail {
     public static validateBudget (device: Device, capacity: number, maxPoints: number): {
         readonly groups: number;
         readonly groupDispatch: DispatchInfo;
+        readonly controlBytes: number;
         readonly sizes: readonly [number, number, number];
     } {
         validateParticleComputeCapacity(capacity);
@@ -192,8 +225,11 @@ export class ParticleComputeTrail {
         ];
         const names = ['Compute trail history', 'Compute trail vertices', 'Compute trail indices'];
         sizes.forEach((size, index) => validateParticleComputeBuffer(device, size, names[index]));
-        validateParticleComputeBuffer(device, (8 + groups + capacity * 9) * 4, 'Compute trail control');
-        return { groups, groupDispatch, sizes };
+        // One map word and one metadata record per particle follow the group sums.
+        const controlWords = ComputeTrailControlOffset.HEADER_WORDS + groups + capacity * (1 + ComputeTrailMetaOffset.WORDS);
+        const controlBytes = controlWords * Uint32Array.BYTES_PER_ELEMENT;
+        validateParticleComputeBuffer(device, controlBytes, 'Compute trail control');
+        return { groups, groupDispatch, sizes, controlBytes };
     }
 
     private readonly _owned: Disposable[] = [];
@@ -225,7 +261,7 @@ export class ParticleComputeTrail {
         if (device.gfxAPI !== API.WEBGPU) {
             throw new Error('ParticleComputeTrail requires WebGPU');
         }
-        const { groups, groupDispatch, sizes } = ParticleComputeTrail.validateBudget(device, capacity, maxPoints);
+        const { groups, groupDispatch, sizes, controlBytes } = ParticleComputeTrail.validateBudget(device, capacity, maxPoints);
         this._groups = groups;
         this._groupDispatch = groupDispatch;
         this._compiled = compiled;
@@ -250,7 +286,7 @@ export class ParticleComputeTrail {
 
         try {
             this._params = buffer(96, BufferUsageBit.UNIFORM);
-            this._control = buffer((8 + this._groups + capacity * 9) * 4, BufferUsageBit.STORAGE | BufferUsageBit.INDIRECT);
+            this._control = buffer(controlBytes, BufferUsageBit.STORAGE | BufferUsageBit.INDIRECT);
             this._history = buffer(sizes[0], BufferUsageBit.STORAGE, 48);
             this._vertices = buffer(sizes[1], BufferUsageBit.STORAGE | BufferUsageBit.VERTEX, TRAIL_VERTEX_STRIDE);
             this._indices = buffer(sizes[2], BufferUsageBit.STORAGE | BufferUsageBit.INDEX, 4);

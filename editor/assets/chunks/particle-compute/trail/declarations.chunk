@@ -2,6 +2,7 @@
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 #include <particle-compute/common/dispatch>
 
+#include <particle-compute/common/layout>
 #include <particle-compute/common/state>
 
 struct TrailPoint {
@@ -51,10 +52,10 @@ float ccModuleData(uint i) {
 #endif
 
 uint mapBase() {
-    return 8u + limits.z;
+    return PARTICLE_TRAIL_CTRL_HEADER_WORDS + limits.z;
 }
 uint metaBase(uint handle) {
-    return mapBase() + limits.x + handle * 8u;
+    return mapBase() + limits.x + handle * PARTICLE_TRAIL_META_WORDS;
 }
 uint pointAt(uint handle, uint head, uint j) {
     return handle * limits.y + (head + j) % limits.y;
@@ -79,7 +80,7 @@ vec4 unpackColor(uint c) {
 #ifdef CC_TRAIL_USE_CURVES
 float pointWidth(ParticleState p, float age) {
     float normalized = tick.y > 0.0 ? age / tick.y : (age == 0.0 ? 0.0 : 1.0);
-    return ccCurve(0u, normalized, 1.0) * (ccParam(3u) != 0.0 ? p.size.x : 1.0);
+    return ccCurve(PARTICLE_TRAIL_MOD_WIDTH, normalized, 1.0) * (ccParam(PARTICLE_TRAIL_MOD_WIDTH_FROM_PARTICLE) != 0.0 ? p.size.x : 1.0);
 }
 #endif
 uint reverseDirection(vec3 current, TrailPoint previous) {

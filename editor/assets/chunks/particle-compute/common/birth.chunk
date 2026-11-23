@@ -62,83 +62,98 @@ ParticleState ccSpawnParticle(uint birthBase, uint randomKey, uint handle, uint 
     float initialRand = birthRandom(randomState);
     vec3 pos = vec3(0), dir = vec3(0, 0, -1);
 
-    bool shaped = birthRead(birthBase, 2u) > 0.5;
+    bool shaped = birthRead(birthBase, PARTICLE_BIRTH_SHAPE_ENABLED) > 0.5;
     if (shaped) {
-        int shape = int(birthRead(birthBase, 3u)), emitLocation = int(birthRead(birthBase, 4u));
-        float radius = birthRead(birthBase, 5u), thickness = birthRead(birthBase, 6u);
-        if (shape == 0) {
+        uint shape = uint(birthRead(birthBase, PARTICLE_BIRTH_SHAPE_TYPE));
+        uint emitLocation = uint(birthRead(birthBase, PARTICLE_BIRTH_EMIT_FROM));
+        float radius = birthRead(birthBase, PARTICLE_BIRTH_RADIUS);
+        float thickness = birthRead(birthBase, PARTICLE_BIRTH_RADIUS_THICKNESS);
+        if (shape == PARTICLE_SHAPE_BOX) {
             pos = vec3(birthRandom(randomState), birthRandom(randomState), birthRandom(randomState)) - 0.5;
-            if (emitLocation == 1 || emitLocation == 2) {
+            if (emitLocation == PARTICLE_EMIT_FROM_EDGE || emitLocation == PARTICLE_EMIT_FROM_SHELL) {
                 uint axis = min(uint(birthRandom(randomState) * 3.0), 2u);
                 pos[axis] = birthRandom(randomState) < 0.5 ? -0.5 : 0.5;
-                if (emitLocation == 1) {
+                if (emitLocation == PARTICLE_EMIT_FROM_EDGE) {
                     uint axis2 = (axis + 1u + uint(birthRandom(randomState) * 2.0)) % 3u;
                     pos[axis2] = birthRandom(randomState) < 0.5 ? -0.5 : 0.5;
                 }
-                vec3 boxT = birthVec3(birthBase, 48u);
+                vec3 boxT = birthVec3(birthBase, PARTICLE_BIRTH_BOX_THICKNESS);
                 pos = clamp(
                     pos + (vec3(birthRandom(randomState), birthRandom(randomState), birthRandom(randomState)) * 2.0 -
                            1.0) *
                               max(boxT, vec3(0)) * 0.5,
                     vec3(-0.5), vec3(0.5));
             }
-        } else if (shape == 1 || shape == 2) {
-            float theta = int(birthRead(birthBase, 10u)) == 0 ? birthRandom(randomState) * birthRead(birthBase, 9u) : arcAngle;
+        } else if (shape == PARTICLE_SHAPE_CIRCLE || shape == PARTICLE_SHAPE_CONE) {
+            uint arcMode = uint(birthRead(birthBase, PARTICLE_BIRTH_ARC_MODE));
+            float theta = arcMode == PARTICLE_ARC_MODE_RANDOM ? birthRandom(randomState) * birthRead(birthBase, PARTICLE_BIRTH_ARC) : arcAngle;
             float r = mix(radius * (1.0 - thickness), radius, birthRandom(randomState));
             vec2 unit = vec2(cos(theta), sin(theta));
             pos = vec3(unit * r, 0);
-            if (shape == 1)
+            if (shape == PARTICLE_SHAPE_CIRCLE) {
                 dir = birthNormal(pos);
-            else {
-                float angle = birthRead(birthBase, 7u);
-                if (emitLocation == 2) {
+            } else {
+                float angle = birthRead(birthBase, PARTICLE_BIRTH_ANGLE);
+                if (emitLocation == PARTICLE_EMIT_FROM_SHELL) {
                     pos = vec3(unit * radius, 0);
                     dir = birthNormal(vec3(unit * sin(angle), -cos(angle)));
                 } else {
                     dir = birthNormal(vec3(pos.xy * sin(angle), -cos(angle) * radius));
                 }
-                if (emitLocation == 3 && abs(dir.z) > 0.000001)
-                    pos += dir * (birthRead(birthBase, 8u) * birthRandom(randomState) / -dir.z);
+                if (emitLocation == PARTICLE_EMIT_FROM_VOLUME && abs(dir.z) > 0.000001) {
+                    pos += dir * (birthRead(birthBase, PARTICLE_BIRTH_LENGTH) * birthRandom(randomState) / -dir.z);
+                }
             }
         } else {
             float z = birthRandom(randomState) * 2.0 - 1.0, theta = birthRandom(randomState) * 6.28318530718;
             float r = sqrt(max(0.0, 1.0 - z * z));
             pos = vec3(r * cos(theta), r * sin(theta), z);
-            pos *= emitLocation == 2 ? radius : mix(radius * (1.0 - thickness), radius, birthRandom(randomState));
-            if (shape == 4) pos.z = -abs(pos.z);
+            pos *= emitLocation == PARTICLE_EMIT_FROM_SHELL ? radius : mix(radius * (1.0 - thickness), radius, birthRandom(randomState));
+            if (shape == PARTICLE_SHAPE_HEMISPHERE) {
+                pos.z = -abs(pos.z);
+            }
             dir = birthNormal(pos);
         }
-        float jitter = birthRead(birthBase, 11u);
+        float jitter = birthRead(birthBase, PARTICLE_BIRTH_RANDOM_POSITION_AMOUNT);
         if (jitter > 0.0)
             pos += (vec3(birthRandom(randomState), birthRandom(randomState), birthRandom(randomState)) * 2.0 - 1.0) *
                    jitter;
-        vec4 shapeQ = birthVec4(birthBase, 24u);
+        vec4 shapeQ = birthVec4(birthBase, PARTICLE_BIRTH_SHAPE_ROTATION);
         dir = birthRotate(shapeQ, dir);
-        pos = birthRotate(shapeQ, pos * birthVec3(birthBase, 16u)) + birthVec3(birthBase, 20u);
-        if (birthRead(birthBase, 12u) > 0.0) dir = mix(dir, birthNormal(pos), birthRead(birthBase, 12u));
+        pos = birthRotate(shapeQ, pos * birthVec3(birthBase, PARTICLE_BIRTH_SCALE)) + birthVec3(birthBase, PARTICLE_BIRTH_POSITION);
+        float sphericalDirection = birthRead(birthBase, PARTICLE_BIRTH_SPHERICAL_DIRECTION_AMOUNT);
+        if (sphericalDirection > 0.0) {
+            dir = mix(dir, birthNormal(pos), sphericalDirection);
+        }
     }
-    if (birthRead(birthBase, 14u) > 0.5) {
-        mat4 world = mat4(birthVec4(birthBase, 28u), birthVec4(birthBase, 32u), birthVec4(birthBase, 36u), birthVec4(birthBase, 40u));
+    if (birthRead(birthBase, PARTICLE_BIRTH_WORLD_SPACE) > 0.5) {
+        mat4 world = mat4(
+            birthVec4(birthBase, PARTICLE_BIRTH_WORLD_MATRIX),
+            birthVec4(birthBase, PARTICLE_BIRTH_WORLD_MATRIX_Y),
+            birthVec4(birthBase, PARTICLE_BIRTH_WORLD_MATRIX_Z),
+            birthVec4(birthBase, PARTICLE_BIRTH_WORLD_MATRIX_W)
+        );
         pos = (world * vec4(pos, 1)).xyz;
-        dir = birthRotate(birthVec4(birthBase, 44u), dir);
+        dir = birthRotate(birthVec4(birthBase, PARTICLE_BIRTH_WORLD_ROTATION), dir);
     }
-    float time = birthRead(birthBase, 1u);
+    float time = birthRead(birthBase, PARTICLE_BIRTH_NORMALIZED_TIME);
     ccEvaluateParticleCurves(true, time, initialRand, 0u);
-    float life = ccInitialLifetime(time, initialRand) + birthRead(birthBase, 0u);
+    float life = ccInitialLifetime(time, initialRand) + birthRead(birthBase, PARTICLE_BIRTH_EMIT_DT);
     ParticleState p;
     p.positionLife = vec4(pos, life);
     p.velocityLife = vec4(dir * ccInitialSpeed(time, initialRand), life);
     p.renderVelocity = vec4(p.velocityLife.xyz, 0);
     p.identity = uvec4(uint(birthRandom(randomState) * 233280.0), handle, generation, 0);
     ccInitializeParticleModules(p, time, initialRand);
-    if (shaped && birthRead(birthBase, 13u) > 0.5 && dot(dir, dir) > 0.0) {
+    if (shaped && birthRead(birthBase, PARTICLE_BIRTH_ALIGN_TO_DIRECTION) > 0.5 && dot(dir, dir) > 0.0) {
         vec3 e = birthToEuler(normalize(birthMultiply(birthAlign(dir), birthEuler(p.rotation.xyz))));
         p.rotation = vec4(e, 0);
-        int mode = int(birthRead(birthBase, 15u));
-        if (mode == 1)
+        uint mode = uint(birthRead(birthBase, PARTICLE_BIRTH_RENDER_MODE));
+        if (mode == PARTICLE_RENDER_MODE_STRETCHED_BILLBOARD) {
             e = vec3(0);
-        else if (mode == 2 || mode == 3)
+        } else if (mode == PARTICLE_RENDER_MODE_HORIZONTAL_BILLBOARD || mode == PARTICLE_RENDER_MODE_VERTICAL_BILLBOARD) {
             e = vec3(0, 0, e.z);
+        }
         p.startRotation = birthEuler(e);
     }
     return p;

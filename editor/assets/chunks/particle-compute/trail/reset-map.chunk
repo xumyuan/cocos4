@@ -5,6 +5,8 @@ precision highp float;
 void main() {
     uint h = ccParticleInvocationIndex();
     if (h >= limits.x) return;
-    control[mapBase() + h] = 0xffffffffu;
-    if (h == 0u) control[5] = 0u;
+    control[mapBase() + h] = PARTICLE_INVALID_INDEX;
+    if (h == 0u) {
+        control[PARTICLE_TRAIL_CTRL_OVERFLOW] = 0u;
+    }
 }

@@ -11,6 +11,7 @@ layout(std140) uniform FrameParams {
     uvec4 identityOffsets;
     uvec4 scanParams;
 };
+#include <particle-compute/common/layout>
 #include <particle-compute/common/state>
 
 #pragma rate InputState pass

@@ -6,27 +6,29 @@ precision highp float;
 
 void main() {
     uint i = ccParticleInvocationIndex();
-    if (i >= control[1]) return;
+    if (i >= control[PARTICLE_SIM_CTRL_ACCEPTED]) return;
     uint lo = 0u;
     uint hi = counts.z;
     while (lo < hi) {
         uint mid = (lo + hi) >> 1u;
-        if (i < birthWords[mid * 4u + 1u]) {
+        if (i < birthWords[mid * PARTICLE_BIRTH_BATCH_HEADER_WORDS + PARTICLE_BIRTH_BATCH_END]) {
             hi = mid;
         } else {
             lo = mid + 1u;
         }
     }
-    if (lo >= counts.z || i < birthWords[lo * 4u]) return;
-    uint handle = control[scratch.w + control[8] - 1u - i];
+    if (lo >= counts.z || i < birthWords[lo * PARTICLE_BIRTH_BATCH_HEADER_WORDS + PARTICLE_BIRTH_BATCH_BEGIN]) return;
+    uint handle = control[scratch.w + control[PARTICLE_SIM_CTRL_FREE_TOP_BEFORE] - 1u - i];
     uint generation = control[identityOffsets.x + handle] + 1u;
     control[identityOffsets.x + handle] = generation;
-    uint key = birthHash((control[7] + i + floatBitsToUint(clockInfo.z)) ^ floatBitsToUint(clockInfo.w));
-    ParticleState p = ccSpawnParticle(birthWords[lo * 4u + 2u], key, handle, generation,
+    uint key = birthHash((control[PARTICLE_SIM_CTRL_EMITTED_TOTAL] + i + floatBitsToUint(clockInfo.z)) ^ floatBitsToUint(clockInfo.w));
+    ParticleState p = ccSpawnParticle(birthWords[lo * PARTICLE_BIRTH_BATCH_HEADER_WORDS + PARTICLE_BIRTH_BATCH_SNAPSHOT], key, handle, generation,
                                       uintBitsToFloat(control[identityOffsets.z + lo]));
     // CPU Particle.reset does not clear startRow; retain it across pooled reuse
     // when Texture initialization is disabled, including clear/restart.
-    if ((uint(ccParam(0u)) & 64u) == 0u) p.startSize.w = uintBitsToFloat(control[identityOffsets.w + handle]);
+    if ((uint(ccParam(PARTICLE_MODULE_FLAGS)) & PARTICLE_MODULE_FLAG_TEXTURE) == 0u) {
+        p.startSize.w = uintBitsToFloat(control[identityOffsets.w + handle]);
+    }
     control[identityOffsets.w + handle] = floatBitsToUint(p.startSize.w);
-    inputState[control[0] + i] = p;
+    inputState[control[PARTICLE_SIM_CTRL_LIVE_COUNT] + i] = p;
 }
