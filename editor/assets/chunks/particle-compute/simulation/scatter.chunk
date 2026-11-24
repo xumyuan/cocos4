@@ -5,13 +5,13 @@ precision highp float;
 void main() {
     uint i = ccParticleInvocationIndex();
     if (i >= control[PARTICLE_SIM_CTRL_ACTIVE_COUNT]) return;
-    uint prefix = control[scratch.y + i] + control[scratch.z + ccParticleGroupIndex()];
-    ParticleState p = inputState[i];
-    if (control[scratch.x + i] != 0u) {
-        outputState[prefix] = p;
-        control[identityOffsets.y + p.identity.y] = prefix;
+    uint handle = control[control[PARTICLE_SIM_CTRL_ALIVE_OFFSET] + i];
+    uint packedPrefix = control[scratchOffsets.x + i];
+    uint dst = (packedPrefix & PARTICLE_PREFIX_VALUE_MASK) + control[scratchOffsets.y + ccParticleGroupIndex()];
+    if ((packedPrefix & PARTICLE_PREFIX_ALIVE_BIT) != 0u) {
+        control[control[PARTICLE_SIM_CTRL_NEXT_ALIVE_OFFSET] + dst] = handle;
     } else {
-        control[scratch.w + control[PARTICLE_SIM_CTRL_FREE_TOP_AFTER] + i - prefix] = p.identity.y;
-        control[identityOffsets.y + p.identity.y] = PARTICLE_INVALID_INDEX;
+        uint deadSlot = control[PARTICLE_SIM_CTRL_FREE_TOP_AFTER] + i - dst;
+        control[scratchOffsets.z + deadSlot] = handle;
     }
 }

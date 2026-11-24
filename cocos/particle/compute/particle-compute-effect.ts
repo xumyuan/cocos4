@@ -46,6 +46,12 @@ export function validateParticleComputeBuffer (device: Device, bytes: number, la
 
 /** Spread large pools over two dispatch dimensions instead of imposing a pool-size cap. */
 export function createParticleComputeDispatch (device: Device, groups: number): DispatchInfo {
+    const dispatch = new DispatchInfo(1, 1, 1);
+    setParticleComputeDispatch(device, dispatch, groups);
+    return dispatch;
+}
+
+export function setParticleComputeDispatch (device: Device, dispatch: DispatchInfo, groups: number): void {
     if (!Number.isSafeInteger(groups) || groups < 1) {
         throw new RangeError('Invalid particle compute workgroup count');
     }
@@ -55,7 +61,9 @@ export function createParticleComputeDispatch (device: Device, groups: number): 
     if (limits?.y > 0 && y > limits.y) {
         throw new RangeError(`Particle compute requires ${groups} workgroups; the device supports ${limits.x} x ${limits.y}`);
     }
-    return new DispatchInfo(x, y, 1);
+    dispatch.groupCountX = x;
+    dispatch.groupCountY = y;
+    dispatch.groupCountZ = 1;
 }
 
 export interface Disposable {
@@ -69,7 +77,7 @@ interface StateSetEntry {
 }
 
 /**
- * Two descriptor sets for the simulation's A/B state buffers. When both slots
+ * Cache descriptor sets for recently bound simulations. When both slots
  * miss, the older slot is rebound. The create callback owns the new set.
  */
 export class ParticleComputeStateSets {

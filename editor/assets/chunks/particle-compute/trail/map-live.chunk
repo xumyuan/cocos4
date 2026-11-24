@@ -5,6 +5,8 @@ precision highp float;
 void main() {
     uint i = ccParticleInvocationIndex();
     if (i >= min(counters[PARTICLE_SIM_CTRL_LIVE_COUNT], limits.x)) return;
-    uint h = particles[i].identity.y;
-    if (h < limits.x) control[mapBase() + h] = i;
+    uint h = counters[counters[PARTICLE_SIM_CTRL_ALIVE_OFFSET] + i];
+    if (h < limits.x) {
+        control[mapBase() + h] = h;
+    }
 }

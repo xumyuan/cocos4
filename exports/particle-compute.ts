@@ -9,7 +9,7 @@ import { registerParticleComputeRendererFactory } from '../cocos/particle/render
 registerParticleComputeRendererFactory((info) => new ParticleSystemRendererCompute(info));
 
 export { ParticleSimulationBackend } from '../cocos/particle/enum';
-export { ParticleComputeSimulation } from '../cocos/particle/compute/particle-compute-simulation';
+export { ComputeSimControlOffset, ParticleComputeSimulation } from '../cocos/particle/compute/particle-compute-simulation';
 export { compileParticleComputeBirth } from '../cocos/particle/compute/particle-compute-birth';
 export { compileParticleComputeModules } from '../cocos/particle/compute/particle-compute-modules';
 export { ParticleComputeTrail, compileParticleComputeTrail } from '../cocos/particle/compute/particle-compute-trail';

@@ -17,9 +17,6 @@ CCEffect %{
     - compute: particle-compute/simulation/update
       pass: particle-compute-simulation
       phase: update
-    - compute: particle-compute/simulation/scan
-      pass: particle-compute-simulation
-      phase: scan
     - compute: particle-compute/simulation/scan-sums
       pass: particle-compute-simulation
       phase: scan-sums

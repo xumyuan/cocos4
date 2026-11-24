@@ -37,7 +37,8 @@ void main() {
         arguments[PARTICLE_DRAW_FIRST_INSTANCE] = 0u; // firstInstance
     }
     if (i >= count) return;
-    ParticleState p = particles[i];
+    uint handle = counters[counters[PARTICLE_SIM_CTRL_ALIVE_OFFSET] + i];
+    ParticleState p = particles[handle];
     uint base = i * renderInfo.z;
     vertices[base + PARTICLE_RENDER_VERTEX_POSITION_X] = floatBitsToUint(p.positionLife.x);
     vertices[base + PARTICLE_RENDER_VERTEX_POSITION_Y] = floatBitsToUint(p.positionLife.y);

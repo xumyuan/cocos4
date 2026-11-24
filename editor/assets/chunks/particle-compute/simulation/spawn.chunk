@@ -18,10 +18,12 @@ void main() {
         }
     }
     if (lo >= counts.z || i < birthWords[lo * PARTICLE_BIRTH_BATCH_HEADER_WORDS + PARTICLE_BIRTH_BATCH_BEGIN]) return;
-    uint handle = control[scratch.w + control[PARTICLE_SIM_CTRL_FREE_TOP_BEFORE] - 1u - i];
+    uint handle = control[scratchOffsets.z + control[PARTICLE_SIM_CTRL_FREE_TOP_BEFORE] - 1u - i];
     uint generation = control[identityOffsets.x + handle] + 1u;
     control[identityOffsets.x + handle] = generation;
-    uint key = birthHash((control[PARTICLE_SIM_CTRL_EMITTED_TOTAL] + i + floatBitsToUint(clockInfo.z)) ^ floatBitsToUint(clockInfo.w));
+    // Keep the original birth stream for existing effects and explicit seeds.
+    uint epochSalt = floatBitsToUint(float(simMeta.y));
+    uint key = birthHash((control[PARTICLE_SIM_CTRL_EMITTED_TOTAL] + i + epochSalt) ^ (simMeta.z & 0xbfffffffu));
     ParticleState p = ccSpawnParticle(birthWords[lo * PARTICLE_BIRTH_BATCH_HEADER_WORDS + PARTICLE_BIRTH_BATCH_SNAPSHOT], key, handle, generation,
                                       uintBitsToFloat(control[identityOffsets.z + lo]));
     // CPU Particle.reset does not clear startRow; retain it across pooled reuse
@@ -30,5 +32,7 @@ void main() {
         p.startSize.w = uintBitsToFloat(control[identityOffsets.w + handle]);
     }
     control[identityOffsets.w + handle] = floatBitsToUint(p.startSize.w);
-    inputState[control[PARTICLE_SIM_CTRL_LIVE_COUNT] + i] = p;
+    states[handle] = p;
+    uint aliveIn = control[PARTICLE_SIM_CTRL_ALIVE_OFFSET];
+    control[aliveIn + control[PARTICLE_SIM_CTRL_LIVE_COUNT] + i] = handle;
 }

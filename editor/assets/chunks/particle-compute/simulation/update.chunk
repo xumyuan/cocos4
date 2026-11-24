@@ -3,12 +3,16 @@ precision highp float;
 #include <particle-compute/simulation/declarations>
 #include <particle-compute/common/modules>
 
+shared uint values[64];
+
 void main() {
     uint i = ccParticleInvocationIndex();
-    if (i >= counts.x) return;
+    uint lane = gl_LocalInvocationID.x;
+    uint group = ccParticleGroupIndex();
     uint alive = 0u;
     if (i < control[PARTICLE_SIM_CTRL_ACTIVE_COUNT]) {
-        ParticleState p = inputState[i];
+        uint handle = control[control[PARTICLE_SIM_CTRL_ALIVE_OFFSET] + i];
+        ParticleState p = states[handle];
         // Compensated subtraction limits lifetime drift against the CPU's f64 accumulator.
         // size.w is simulation-only; all size modules and renderers use size.xyz.
         float decrement = -gravityDt.w - p.size.w;
@@ -16,11 +20,28 @@ void main() {
         p.size.w = (remaining - p.positionLife.w) - decrement;
         p.positionLife.w = remaining;
         if (p.positionLife.w >= 0.0) {
-            ccApplyParticleModules(p, gravityDt.w, clockInfo.x, uint(clockInfo.y), gravityDt.xyz);
+            ccApplyParticleModules(p, gravityDt.w, timeInfo.x, simMeta.x, gravityDt.xyz);
             p.positionLife.xyz += p.renderVelocity.xyz * gravityDt.w;
-            inputState[i] = p;
+            states[handle] = p;
             alive = 1u;
         }
     }
-    control[scratch.x + i] = alive;
+    // Inactive lanes participate in every barrier, including a padded final workgroup.
+    values[lane] = alive;
+    barrier();
+    for (uint step = 1u; step < 64u; step *= 2u) {
+        uint addend = 0u;
+        if (lane >= step) {
+            addend = values[lane - step];
+        }
+        barrier();
+        values[lane] += addend;
+        barrier();
+    }
+    if (i < control[PARTICLE_SIM_CTRL_ACTIVE_COUNT]) {
+        control[scratchOffsets.x + i] = (values[lane] - alive) | (alive != 0u ? PARTICLE_PREFIX_ALIVE_BIT : 0u);
+    }
+    if (lane == 63u && group < counts.w) {
+        control[scratchOffsets.y + group] = values[lane];
+    }
 }

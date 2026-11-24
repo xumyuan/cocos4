@@ -6,21 +6,18 @@ layout(local_size_x = 64) in;
 layout(std140) uniform FrameParams {
     uvec4 counts;
     vec4 gravityDt;
-    vec4 clockInfo;
-    uvec4 scratch;
+    vec4 timeInfo;
+    uvec4 simMeta;
+    uvec4 scratchOffsets;
     uvec4 identityOffsets;
     uvec4 scanParams;
 };
 #include <particle-compute/common/layout>
 #include <particle-compute/common/state>
 
-#pragma rate InputState pass
-layout(std430) buffer InputState {
-    ParticleState inputState[];
-};
-#pragma rate OutputState pass
-layout(std430) buffer OutputState {
-    ParticleState outputState[];
+#pragma rate StateBuffer pass
+layout(std430) buffer StateBuffer {
+    ParticleState states[];
 };
 #pragma rate Control pass
 layout(std430) buffer Control {

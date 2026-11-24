@@ -45,6 +45,8 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
     private _trail: ParticleComputeTrail | null = null;
     private _computeTrailModel: scene.Model | null = null;
     private _trailSubMesh: RenderingSubMesh | null = null;
+    private _moduleVersion = 0;
+    private readonly _gravityComponents: [number, number, number] = [0, -9.8, 0];
     private _moduleConfigKey: string | null = null;
     private _compiledModuleData: Float32Array | null = null;
     private _trailConfigKey: string | null = null;
@@ -167,6 +169,7 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
         if (!this._compiledModuleData || moduleKey === null || moduleKey !== this._moduleConfigKey) {
             this._compiledModuleData = compileParticleComputeModules(ps, moduleOptions).data;
             this._moduleConfigKey = moduleKey;
+            ++this._moduleVersion;
         }
 
         this._gravityVector.set(0, -9.8, 0);
@@ -181,12 +184,16 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
             Vec3.transformMat4(this._gravityVector, this._gravityVector, this._gravityMatrix);
         }
 
+        this._gravityComponents[0] = this._gravityVector.x;
+        this._gravityComponents[1] = this._gravityVector.y;
+        this._gravityComponents[2] = this._gravityVector.z;
         this._simulation.tick(
             stepDt,
             this._births,
             this._compiledModuleData,
             systemTime,
-            [this._gravityVector.x, this._gravityVector.y, this._gravityVector.z],
+            this._gravityComponents,
+            this._moduleVersion,
         );
         if (this._births.length > 0) {
             this._committedBirthRevision = this._birthRevision;
