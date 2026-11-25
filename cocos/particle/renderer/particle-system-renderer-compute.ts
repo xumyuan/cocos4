@@ -41,7 +41,6 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
     private _disposed = false;
     private readonly _gravityVector = new Vec3();
     private readonly _gravityMatrix = new Mat4();
-    private readonly _world = new Mat4();
     private _trail: ParticleComputeTrail | null = null;
     private _computeTrailModel: scene.Model | null = null;
     private _trailSubMesh: RenderingSubMesh | null = null;
@@ -164,7 +163,7 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
             this.updateRotation(material.passes[0]);
         }
 
-        const moduleOptions = { renderMode: ps.renderer.renderMode };
+        const moduleOptions = { renderMode: ps.renderer.renderMode, estimateError: false };
         const moduleKey = getParticleComputeModuleConfigKey(ps, moduleOptions);
         if (!this._compiledModuleData || moduleKey === null || moduleKey !== this._moduleConfigKey) {
             this._compiledModuleData = compileParticleComputeModules(ps, moduleOptions).data;
@@ -310,7 +309,7 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
         const trailKey = getParticleComputeTrailConfigKey(module);
         const recompiled = !this._compiledTrail || trailKey === null || trailKey !== this._trailConfigKey;
         if (recompiled) {
-            this._compiledTrail = compileParticleComputeTrail(module);
+            this._compiledTrail = compileParticleComputeTrail(module, { estimateError: false });
             this._trailConfigKey = trailKey;
         }
         const compiled = this._compiledTrail!;
@@ -343,12 +342,12 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
             this._trail.configure(compiled);
             this.updateTrailMaterial();
         }
-        ps.node.getWorldMatrix(this._world);
+        const toWorld = ps.simulationSpace === ParticleSpace.Local && compiled.space === ParticleSpace.World;
         this._trail.update(
             simulation.stateBuffer,
             simulation.counterBuffer,
             dt,
-            this._world,
+            toWorld ? ps.node.worldMatrix : undefined,
             systemTime,
             ps.simulationSpace,
             simulation.activeBound ?? simulation.capacity,

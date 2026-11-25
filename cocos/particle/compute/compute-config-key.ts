@@ -119,7 +119,8 @@ export function getParticleComputeModuleConfigKey (
     options: ParticleComputeModuleOptions = {},
 ): string | null {
     const key = new ConfigKey();
-    key.values([options.samples, options.renderMode, options.maxSampledScalarError, source.startSize3D, source.startRotation3D]);
+    key.values([options.samples, options.renderMode, options.maxSampledScalarError, options.estimateError]);
+    key.values([source.startSize3D, source.startRotation3D]);
     for (const value of [
         source.gravityModifier,
         source.startSizeX,

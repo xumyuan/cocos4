@@ -126,13 +126,15 @@ export interface ParticleComputeModuleOptions {
     readonly limitRotation?: readonly [number, number, number, number];
     /** Reject custom-evaluator LUT error; does not measure direct-curve f32 roundoff. */
     readonly maxSampledScalarError?: number;
+    /** Defaults to true. Providing an error threshold always enables estimation. */
+    readonly estimateError?: boolean;
 }
 
 export interface CompiledParticleComputeModules {
     readonly data: Float32Array;
     readonly flags: number;
     readonly samples: number;
-    readonly maxSampledScalarError: number;
+    readonly maxSampledScalarError: number | undefined;
 }
 
 /**
@@ -146,6 +148,7 @@ export function compileParticleComputeModules (
     const packer = new ParticleComputeCurvePacker(
         PARTICLE_COMPUTE_MODULE_HEADER_FLOATS,
         options.samples ?? DEFAULT_PARTICLE_COMPUTE_CURVE_SAMPLES,
+        options.estimateError !== false || options.maxSampledScalarError !== undefined,
     );
     const moduleData = packer.values;
     const offsets = ComputeModuleOffset;
@@ -250,17 +253,17 @@ export function compileParticleComputeModules (
     moduleData[offsets.NOISE_SPEED + 1] = noise?.noiseSpeedY ?? 0;
     moduleData[offsets.NOISE_SPEED + 2] = noise?.noiseSpeedZ ?? 0;
     moduleData[offsets.NOISE_FREQUENCY] = noise?.noiseFrequency ?? 1;
-    moduleData[offsets.NOISE_OCTAVES] = noise?.octaves ?? 1;
+    moduleData[offsets.NOISE_OCTAVES] = 1;
     moduleData[offsets.NOISE_MULTIPLIER] = noise?.octaveMultiplier ?? 0.5;
     moduleData[offsets.NOISE_SCALE] = noise?.octaveScale ?? 2;
 
-    if (!Number.isInteger(moduleData[offsets.NOISE_OCTAVES])
-        || moduleData[offsets.NOISE_OCTAVES] < 1
-        || moduleData[offsets.NOISE_OCTAVES] > 4) {
-        throw new RangeError('Noise octaves must be in [1, 4]');
-    }
+    if (noise?.enable) {
+        const octaves = noise.octaves ?? 1;
+        if (!Number.isInteger(octaves) || octaves < 1 || octaves > 4) {
+            throw new RangeError('Noise octaves must be in [1, 4]');
+        }
 
-    if ((flags & ComputeModuleFlag.NOISE) !== 0) {
+        moduleData[offsets.NOISE_OCTAVES] = octaves;
         moduleData[offsets.NOISE_PERM] = packer.append(NOISE_PERMUTATION_PAIRS);
     }
 
@@ -328,7 +331,8 @@ export function compileParticleComputeModules (
         throw new RangeError('Particle module parameters must be finite');
     }
 
-    if (options.maxSampledScalarError !== undefined && packer.maxSampledScalarError > options.maxSampledScalarError) {
+    if (options.maxSampledScalarError !== undefined && packer.maxSampledScalarError !== undefined
+        && packer.maxSampledScalarError > options.maxSampledScalarError) {
         throw new RangeError(`Particle curve LUT error ${packer.maxSampledScalarError} exceeds ${options.maxSampledScalarError}`);
     }
 

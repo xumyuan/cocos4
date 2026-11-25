@@ -5,7 +5,6 @@ import {
     DescriptorSetInfo, Device, DispatchInfo, MemoryUsageBit, PipelineState,
 } from '../../gfx';
 import { ComputeBirthBatchOffset, PARTICLE_COMPUTE_BIRTH_FLOATS, ParticleComputeBirthBatch } from './particle-compute-birth';
-import { PARTICLE_COMPUTE_MODULE_HEADER_FLOATS } from './particle-compute-curves';
 import {
     createParticleComputeDispatch, flushParticleComputeCommands, getParticleComputeBindingLayout,
     getParticleComputeProgram, PARTICLE_COMPUTE_STATE_STRIDE, PARTICLE_COMPUTE_WORKGROUP_SIZE,
@@ -32,7 +31,7 @@ export const ComputeSimControlOffset = {
 
 const MAX_BATCHES = 1024;
 const INITIAL_BIRTH_BATCHES = 8;
-const BIRTH_BATCH_WORDS = ComputeBirthBatchOffset.HEADER_WORDS + PARTICLE_COMPUTE_BIRTH_FLOATS;
+const BIRTH_BATCH_WORDS = ComputeBirthBatchOffset.HEADER_WORDS + PARTICLE_COMPUTE_BIRTH_FLOATS; // 4 + 64 = 68
 const DEFAULT_GRAVITY: readonly [number, number, number] = [0, -9.8, 0];
 
 const enum FrameParamWord {
@@ -45,7 +44,7 @@ const enum FrameParamWord {
     LENGTH,
 }
 
-const FRAME_PARAM_SIZE = FrameParamWord.LENGTH * Uint32Array.BYTES_PER_ELEMENT;
+const FRAME_PARAM_SIZE = FrameParamWord.LENGTH * Uint32Array.BYTES_PER_ELEMENT; // 28 * 4 = 112
 const SIMULATION_RESOURCES = ['FrameParams', 'StateBuffer', 'Control', 'BirthWords', 'ModuleWords'] as const;
 type SimulationShared = ParticleComputeBindingLayout<typeof SIMULATION_RESOURCES[number]>;
 const FIXED_KERNELS = ['initialize', 'prepare', 'scan-sums', 'scan-add', 'scatter', 'finalize'] as const;
@@ -62,6 +61,11 @@ function getSharedSimulationResources (device: Device): SimulationShared {
     return shared;
 }
 
+interface ScanLevel {
+    readonly set: DescriptorSet;
+    readonly dispatch: DispatchInfo;
+}
+
 /**
  * @engineInternal
  * GPU implementation of existing particle state; consumers resolve stable handles through the current alive list.
@@ -73,8 +77,7 @@ export class ParticleComputeSimulation {
     private readonly _corePipelines = {} as Record<typeof FIXED_KERNELS[number], PipelineState>;
     private readonly _spawnPipelines = new Map<number, PipelineState>();
     private readonly _updatePipelines = new Map<number, PipelineState>();
-    private readonly _scanSets: DescriptorSet[] = [];
-    private readonly _scanDispatches: DispatchInfo[] = [];
+    private readonly _scanLevels: ScanLevel[] = [];
     private readonly _spawnDispatch = new DispatchInfo(1, 1, 1);
     private readonly _activeDispatch = new DispatchInfo(1, 1, 1);
     private readonly _shared: SimulationShared;
@@ -105,6 +108,7 @@ export class ParticleComputeSimulation {
         seed: number | undefined = undefined,
         enableStateReadback = false,
     ) {
+        // Validate backend/capacity and derive per-instance seed and full dispatch size.
         if (_device.gfxAPI !== API.WEBGPU) {
             throw new Error('Compute particles require WebGPU');
         }
@@ -127,11 +131,13 @@ export class ParticleComputeSimulation {
             return own(_device.createBuffer(new BufferInfo(bufferUsage, MemoryUsageBit.DEVICE, bytes, stride)));
         };
 
+        // Lay out contiguous uint32 regions inside the Control buffer and size scan levels.
         const prefix = ComputeSimControlOffset.HEADER_WORDS;
         const sums = prefix + capacity;
         let free = sums;
+        let scanLevelCount = 0;
         for (let count = this._groups; ; count = Math.ceil(count / PARTICLE_COMPUTE_WORKGROUP_SIZE)) {
-            this._scanDispatches.push(new DispatchInfo(1, 1, 1));
+            ++scanLevelCount;
             free += count;
             if (count <= PARTICLE_COMPUTE_WORKGROUP_SIZE) {
                 break;
@@ -143,13 +149,15 @@ export class ParticleComputeSimulation {
         const arcs = aliveB + capacity;
         const rows = arcs + MAX_BATCHES;
 
+        // Allocate aligned UBO slices (frame + scan levels) and prefill static offsets.
         const alignment = _device.capabilities.uboOffsetAlignment;
         this._paramStride = Math.ceil(FRAME_PARAM_SIZE / alignment) * alignment;
-        this._paramWords = new Uint32Array((this._scanDispatches.length * this._paramStride + FRAME_PARAM_SIZE) / Uint32Array.BYTES_PER_ELEMENT);
+        this._paramWords = new Uint32Array((scanLevelCount * this._paramStride + FRAME_PARAM_SIZE) / Uint32Array.BYTES_PER_ELEMENT);
         this._paramFloats = new Float32Array(this._paramWords.buffer);
         this._paramWords[FrameParamWord.CAPACITY] = capacity;
         this._paramWords.set([prefix, sums, free, aliveA, generations, aliveB, arcs, rows], FrameParamWord.PREFIX);
 
+        // Create GPU buffers, descriptor sets, core pipelines, and initialize control state.
         try {
             this._shared = getSharedSimulationResources(_device);
             const stateUsage = enableStateReadback ? BufferUsageBit.STORAGE | BufferUsageBit.TRANSFER_SRC : BufferUsageBit.STORAGE;
@@ -159,8 +167,11 @@ export class ParticleComputeSimulation {
             this._births = buffer(this._birthWords.byteLength);
             this._modules = buffer(4096);
             this._frameSet = this._createFrameSet(0);
-            for (let level = 0; level < this._scanDispatches.length; ++level) {
-                this._scanSets.push(this._createFrameSet((level + 1) * this._paramStride));
+            for (let level = 0; level < scanLevelCount; ++level) {
+                this._scanLevels.push({
+                    set: this._createFrameSet((level + 1) * this._paramStride),
+                    dispatch: new DispatchInfo(1, 1, 1),
+                });
             }
             for (const kernel of FIXED_KERNELS) {
                 this._corePipelines[kernel] = getParticleComputeProgram(_device, 'simulation', kernel).pipeline;
@@ -201,30 +212,13 @@ export class ParticleComputeSimulation {
         gravity: readonly [number, number, number] = DEFAULT_GRAVITY,
         moduleVersion: number | undefined = undefined,
     ): void {
+        // validate inputs before touching any GPU resources, to avoid leaving the simulation in a bad state
         this._assertAlive();
-        if (!Number.isFinite(Math.fround(dt)) || dt < 0 || !Number.isFinite(Math.fround(systemTime))) {
-            throw new RangeError('Invalid particle time');
-        }
-        if (gravity.length !== 3
-            || !Number.isFinite(Math.fround(gravity[0]))
-            || !Number.isFinite(Math.fround(gravity[1]))
-            || !Number.isFinite(Math.fround(gravity[2]))) {
-            throw new RangeError('Invalid particle gravity');
-        }
         if (batches.length > MAX_BATCHES) {
             throw new RangeError('Too many emit batches in one particle update');
         }
-        if (moduleData.length < PARTICLE_COMPUTE_MODULE_HEADER_FLOATS) {
-            throw new RangeError('Invalid particle module data');
-        }
 
-        for (let i = 0; i < batches.length; i++) {
-            const batch = batches[i];
-            if (!Number.isSafeInteger(batch.count) || batch.count < 0 || batch.data.length !== PARTICLE_COMPUTE_BIRTH_FLOATS) {
-                throw new RangeError('Invalid particle birth batch');
-            }
-        }
-
+        // pack the batch data into a single buffer, and record the offsets in the header
         this._ensureBirthCapacity(batches.length);
         let requested = 0;
         let offset = batches.length * ComputeBirthBatchOffset.HEADER_WORDS;
@@ -240,6 +234,7 @@ export class ParticleComputeSimulation {
             offset += PARTICLE_COMPUTE_BIRTH_FLOATS;
         }
 
+        // estimate the scale of emitted particles
         const simBound = Math.min(this.capacity, this._activeBound + requested);
         if (simBound === 0) {
             this._tick++;
@@ -270,7 +265,7 @@ export class ParticleComputeSimulation {
             let sums = this._paramWords[FrameParamWord.SUMS];
             for (let count = activeGroups; ;) {
                 const groups = Math.ceil(count / PARTICLE_COMPUTE_WORKGROUP_SIZE);
-                setParticleComputeDispatch(this._device, this._scanDispatches[levelCount], groups);
+                setParticleComputeDispatch(this._device, this._scanLevels[levelCount].dispatch, groups);
                 ++levelCount;
                 const slice = levelCount * this._paramStride / Uint32Array.BYTES_PER_ELEMENT;
                 this._paramWords[slice + FrameParamWord.SCAN_COUNT] = count;
@@ -302,14 +297,16 @@ export class ParticleComputeSimulation {
 
             cmd.bindPipelineState(this._corePipelines['scan-sums']);
             for (let level = 0; level < levelCount; ++level) {
-                cmd.bindDescriptorSet(setIndex, this._scanSets[level]);
-                cmd.dispatch(this._scanDispatches[level]);
+                const scan = this._scanLevels[level];
+                cmd.bindDescriptorSet(setIndex, scan.set);
+                cmd.dispatch(scan.dispatch);
             }
             if (levelCount > 1) {
                 cmd.bindPipelineState(this._corePipelines['scan-add']);
                 for (let level = levelCount - 2; level >= 0; --level) {
-                    cmd.bindDescriptorSet(setIndex, this._scanSets[level]);
-                    cmd.dispatch(this._scanDispatches[level]);
+                    const scan = this._scanLevels[level];
+                    cmd.bindDescriptorSet(setIndex, scan.set);
+                    cmd.dispatch(scan.dispatch);
                 }
             }
             cmd.bindDescriptorSet(setIndex, this._frameSet);
@@ -367,7 +364,7 @@ export class ParticleComputeSimulation {
         if (this._destroyed) return;
         this._destroyed = true;
         flushParticleComputeCommands(this._device);
-        this._scanSets.length = 0;
+        this._scanLevels.length = 0;
         this._spawnPipelines.clear();
         this._updatePipelines.clear();
         for (let i = this._owned.length - 1; i >= 0; --i) {
@@ -380,22 +377,16 @@ export class ParticleComputeSimulation {
     private _createFrameSet (byteOffset: number): DescriptorSet {
         const { bindings, setLayout } = this._shared;
         const view = this._device.createBuffer(new BufferViewInfo(this._parameters, byteOffset, FRAME_PARAM_SIZE));
-        let set: DescriptorSet | undefined;
-        try {
-            set = this._device.createDescriptorSet(new DescriptorSetInfo(setLayout));
-            set.bindBuffer(bindings.FrameParams, view);
-            set.bindBuffer(bindings.StateBuffer, this._state);
-            set.bindBuffer(bindings.Control, this._control);
-            set.bindBuffer(bindings.BirthWords, this._births);
-            set.bindBuffer(bindings.ModuleWords, this._modules);
-            set.update();
-            this._owned.push(view, set);
-            return set;
-        } catch (error) {
-            set?.destroy();
-            view.destroy();
-            throw error;
-        }
+        this._owned.push(view);
+        const set = this._device.createDescriptorSet(new DescriptorSetInfo(setLayout));
+        this._owned.push(set);
+        set.bindBuffer(bindings.FrameParams, view);
+        set.bindBuffer(bindings.StateBuffer, this._state);
+        set.bindBuffer(bindings.Control, this._control);
+        set.bindBuffer(bindings.BirthWords, this._births);
+        set.bindBuffer(bindings.ModuleWords, this._modules);
+        set.update();
+        return set;
     }
 
     private _getPipeline (kernel: 'spawn' | 'update', features: number): PipelineState {
@@ -430,19 +421,11 @@ export class ParticleComputeSimulation {
         validateParticleComputeBuffer(this._device, size, 'Particle simulation');
         flushParticleComputeCommands(this._device);
         const next = this._device.createBuffer(new BufferInfo(BufferUsageBit.STORAGE | BufferUsageBit.TRANSFER_DST, MemoryUsageBit.DEVICE, size, 4));
-        const sets = [this._frameSet, ...this._scanSets];
-        try {
-            for (const set of sets) {
-                set.bindBuffer(binding, next);
-                set.update();
-            }
-        } catch (error) {
-            for (const set of sets) {
-                set.bindBuffer(binding, old);
-                set.update();
-            }
-            next.destroy();
-            throw error;
+        this._frameSet.bindBuffer(binding, next);
+        this._frameSet.update();
+        for (const { set } of this._scanLevels) {
+            set.bindBuffer(binding, next);
+            set.update();
         }
         this._owned[this._owned.indexOf(old)] = next;
         old.destroy();

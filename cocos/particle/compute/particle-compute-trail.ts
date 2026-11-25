@@ -96,11 +96,12 @@ export interface CompiledParticleComputeTrail {
     readonly data: Float32Array;
     readonly lifeTime: ComputeScalar;
     readonly space: ParticleSpace;
-    readonly maxSampledScalarError: number;
+    readonly maxSampledScalarError: number | undefined;
 }
 
 interface TrailOptions {
     samples?: number;
+    estimateError?: boolean;
 }
 
 /**
@@ -116,7 +117,11 @@ export function compileParticleComputeTrail (
         throw new RangeError('Trail minimum distance must be finite and nonnegative');
     }
 
-    const packer = new ParticleComputeCurvePacker(ComputeTrailOffset.HEADER_WORDS, options.samples ?? DEFAULT_PARTICLE_COMPUTE_CURVE_SAMPLES);
+    const packer = new ParticleComputeCurvePacker(
+        ComputeTrailOffset.HEADER_WORDS,
+        options.samples ?? DEFAULT_PARTICLE_COMPUTE_CURVE_SAMPLES,
+        options.estimateError,
+    );
     const { values } = packer;
     const offsets = ComputeTrailOffset;
     values[offsets.WIDTH] = packer.scalar(source.widthRatio, 1);
@@ -235,7 +240,8 @@ export class ParticleComputeTrail {
     private readonly _owned: Disposable[] = [];
     private readonly _stateSets: ParticleComputeStateSets;
     private readonly _shared: TrailShared;
-    private readonly _paramsData = new ArrayBuffer(96);
+    private readonly _paramFloats = new Float32Array(24);
+    private readonly _paramWords = new Uint32Array(this._paramFloats.buffer);
     private readonly _groups: number;
     private readonly _groupDispatch: DispatchInfo;
     private readonly _singleDispatch = new DispatchInfo(1, 1, 1);
@@ -285,7 +291,7 @@ export class ParticleComputeTrail {
         };
 
         try {
-            this._params = buffer(96, BufferUsageBit.UNIFORM);
+            this._params = buffer(this._paramWords.byteLength, BufferUsageBit.UNIFORM);
             this._control = buffer(controlBytes, BufferUsageBit.STORAGE | BufferUsageBit.INDIRECT);
             this._history = buffer(sizes[0], BufferUsageBit.STORAGE, 48);
             this._vertices = buffer(sizes[1], BufferUsageBit.STORAGE | BufferUsageBit.VERTEX, TRAIL_VERTEX_STRIDE);
@@ -293,8 +299,7 @@ export class ParticleComputeTrail {
             this._moduleData = buffer(compiled.data.byteLength, BufferUsageBit.STORAGE);
             this._moduleData.update(compiled.data);
             this._clearSet = own(this._createBaseSet(this._shared.dummyState, this._shared.dummyCounters));
-            new Uint32Array(this._paramsData).set([capacity, maxPoints, this._groups, 0]);
-            Mat4.toArray(new Float32Array(this._paramsData), Mat4.IDENTITY, 8);
+            this._paramWords.set([capacity, maxPoints, this._groups, 0]);
             this.clear();
         } catch (error) {
             this.destroy();
@@ -363,9 +368,6 @@ export class ParticleComputeTrail {
         activeBound = this.capacity,
     ): void {
         this._assertAlive();
-        if (!Number.isFinite(dt) || dt < 0 || !Number.isFinite(systemTime)) {
-            throw new RangeError('Trail time must be finite and dt nonnegative');
-        }
         if (state.size < this.capacity * PARTICLE_COMPUTE_STATE_STRIDE || counters.size < 4) {
             throw new RangeError(`Trail requires the full ${PARTICLE_COMPUTE_STATE_STRIDE}-byte particle state buffer`);
         }
@@ -374,9 +376,6 @@ export class ParticleComputeTrail {
         }
         const source = this._compiled.lifeTime;
         const lifetime = typeof source === 'number' ? source : source.evaluate(systemTime, 1);
-        if (!Number.isFinite(lifetime) || lifetime < 0) {
-            throw new RangeError('Trail lifetime must be finite and nonnegative');
-        }
 
         const clampedLive = Math.min(this.capacity, Math.max(0, activeBound));
         if (clampedLive === 0 && !this._mayHaveHistory) {
@@ -385,15 +384,17 @@ export class ParticleComputeTrail {
         }
         this._mayHaveHistory = clampedLive > 0;
 
-        const floats = new Float32Array(this._paramsData);
-        new Uint32Array(this._paramsData)[3] = simulationSpace === ParticleSpace.Local && this._compiled.space === ParticleSpace.World ? 1 : 0;
-        floats.set([dt, lifetime, systemTime, this._tick++], 4);
-        Mat4.toArray(floats, worldMatrix, 8);
-        for (let i = 4; i < floats.length; ++i) {
-            if (!Number.isFinite(floats[i])) {
-                throw new RangeError('Trail parameters must fit finite f32 values');
-            }
+        const floats = this._paramFloats;
+        const toWorld = simulationSpace === ParticleSpace.Local && this._compiled.space === ParticleSpace.World;
+        this._paramWords[3] = toWorld ? 1 : 0;
+        floats[4] = dt;
+        floats[5] = Number.isFinite(Math.fround(lifetime)) ? Math.max(0, lifetime) : 0;
+        floats[6] = systemTime;
+        floats[7] = this._tick++;
+        if (toWorld) {
+            Mat4.toArray(floats, worldMatrix, 8);
         }
+
         const set = this._stateSets.acquire(state, counters);
         const liveGroups = clampedLive > 0 ? Math.ceil(clampedLive / PARTICLE_COMPUTE_WORKGROUP_SIZE) : 0;
         this._submit(set, 1, TRAIL_SHADERS.length, liveGroups);
@@ -404,7 +405,7 @@ export class ParticleComputeTrail {
         this._assertAlive();
         this._tick = 0;
         this._mayHaveHistory = false;
-        new Float32Array(this._paramsData)[6] = 0;
+        this._paramFloats[6] = 0;
         this._submit(this._clearSet, 0, 1);
     }
 
@@ -412,7 +413,7 @@ export class ParticleComputeTrail {
     public clearHistory (): void {
         this._assertAlive();
         this._mayHaveHistory = false;
-        const floats = new Float32Array(this._paramsData);
+        const floats = this._paramFloats;
         const time = floats[6];
         floats[6] = -1;
         this._submit(this._clearSet, 0, 1);
@@ -437,7 +438,7 @@ export class ParticleComputeTrail {
             pipelines.push(getParticleComputeProgram(this._device, 'trail', kernel.name, defines).pipeline);
         }
         runParticleComputePass(this._device, this, () => {
-            this._params.update(this._paramsData);
+            this._params.update(this._paramWords.buffer);
         }, (cmd) => {
             for (let i = start; i < end; ++i) {
                 const pipeline = pipelines[i - start];
