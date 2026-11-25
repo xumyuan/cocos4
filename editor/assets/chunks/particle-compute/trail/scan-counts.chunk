@@ -3,6 +3,7 @@ precision highp float;
 #include <particle-compute/trail/declarations>
 
 shared uint sums[64];
+
 void main() {
     uint h = ccParticleInvocationIndex(), lane = gl_LocalInvocationID.x;
     uint value = 0u;
@@ -11,6 +12,7 @@ void main() {
     }
     sums[lane] = value;
     barrier();
+
     for (uint distance = 1u; distance < 64u; distance *= 2u) {
         uint addend = 0u;
         if (lane >= distance) addend = sums[lane - distance];
@@ -18,6 +20,7 @@ void main() {
         sums[lane] += addend;
         barrier();
     }
+
     if (h < limits.x) {
         control[metaBase(h) + PARTICLE_TRAIL_META_INDEX_PREFIX] = sums[lane] - value;
     }

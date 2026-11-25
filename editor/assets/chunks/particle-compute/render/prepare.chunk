@@ -10,25 +10,31 @@ layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 layout(std140) uniform RenderParams {
     uvec4 renderInfo;
 };
+
 #pragma rate SimulationState pass
 layout(std430) readonly buffer SimulationState {
     ParticleState particles[];
 };
+
 #pragma rate SimulationCounters pass
 layout(std430) readonly buffer SimulationCounters {
     uint counters[];
 };
+
 #pragma rate InstanceVertices pass
 layout(std430) buffer InstanceVertices {
     uint vertices[];
 };
+
 #pragma rate IndirectArguments pass
 layout(std430) buffer IndirectArguments {
     uint arguments[];
 };
+
 void main() {
     uint i = ccParticleInvocationIndex();
     uint count = min(counters[PARTICLE_SIM_CTRL_LIVE_COUNT], renderInfo.x);
+
     if (i == 0u) {
         arguments[PARTICLE_DRAW_INDEX_COUNT] = renderInfo.y; // indexCount
         arguments[PARTICLE_DRAW_INSTANCE_COUNT] = count;
@@ -36,10 +42,13 @@ void main() {
         arguments[PARTICLE_DRAW_BASE_VERTEX] = 0u; // baseVertex (signed i32 bits)
         arguments[PARTICLE_DRAW_FIRST_INSTANCE] = 0u; // firstInstance
     }
+
     if (i >= count) return;
+
     uint handle = counters[counters[PARTICLE_SIM_CTRL_ALIVE_OFFSET] + i];
     ParticleState p = particles[handle];
     uint base = i * renderInfo.z;
+
     vertices[base + PARTICLE_RENDER_VERTEX_POSITION_X] = floatBitsToUint(p.positionLife.x);
     vertices[base + PARTICLE_RENDER_VERTEX_POSITION_Y] = floatBitsToUint(p.positionLife.y);
     vertices[base + PARTICLE_RENDER_VERTEX_POSITION_Z] = floatBitsToUint(p.positionLife.z);
@@ -50,10 +59,12 @@ void main() {
     vertices[base + PARTICLE_RENDER_VERTEX_ROTATION_X] = floatBitsToUint(p.rotation.x);
     vertices[base + PARTICLE_RENDER_VERTEX_ROTATION_Y] = floatBitsToUint(p.rotation.y);
     vertices[base + PARTICLE_RENDER_VERTEX_ROTATION_Z] = floatBitsToUint(p.rotation.z);
+
     // State colors are quantized normalized bytes. roundEven avoids losing a
     // byte to f32 division/multiplication error, and matches Uint8ClampedArray.
     uvec4 c = uvec4(roundEven(clamp(p.color, 0.0, 1.0) * 255.0));
     vertices[base + PARTICLE_RENDER_VERTEX_COLOR] = c.x | (c.y << 8u) | (c.z << 16u) | (c.w << 24u);
+
     if (renderInfo.z == PARTICLE_RENDER_VERTEX_STRETCHED_WORDS) {
         vertices[base + PARTICLE_RENDER_VERTEX_VELOCITY_X] = floatBitsToUint(p.renderVelocity.x);
         vertices[base + PARTICLE_RENDER_VERTEX_VELOCITY_Y] = floatBitsToUint(p.renderVelocity.y);

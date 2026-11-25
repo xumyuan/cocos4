@@ -2,6 +2,7 @@
 uint ccParticleGroupIndex() {
     return gl_WorkGroupID.x + gl_WorkGroupID.y * gl_NumWorkGroups.x;
 }
+
 uint ccParticleInvocationIndex() {
     return ccParticleGroupIndex() * 64u + gl_LocalInvocationID.x;
 }

@@ -1,15 +1,19 @@
 // Copyright (c) 2026 Xiamen Yaji Software Co., Ltd.
 shared uint blockTotals[64];
+
 void main() {
     uint lane = gl_LocalInvocationID.x, chunk = (CC_SCAN_COUNT + 63u) / 64u;
     uint begin = lane * chunk, end = min(begin + chunk, CC_SCAN_COUNT), sum = 0u;
+
     for (uint block = begin; block < end; ++block) {
         uint value = CC_SCAN_VALUES(block);
         CC_SCAN_VALUES(block) = sum;
         sum += value;
     }
+
     blockTotals[lane] = sum;
     barrier();
+
     for (uint offset = 1u; offset < 64u; offset *= 2u) {
         uint addend = 0u;
         if (lane >= offset) addend = blockTotals[lane - offset];
@@ -17,10 +21,12 @@ void main() {
         blockTotals[lane] += addend;
         barrier();
     }
+
     uint carry = lane == 0u ? 0u : blockTotals[lane - 1u];
     for (uint block = begin; block < end; ++block) {
         CC_SCAN_VALUES(block) += carry;
     }
+
     if (lane == 63u) {
         CC_SCAN_FINISH(blockTotals[63]);
     }

@@ -3,6 +3,7 @@ precision highp float;
 #include <particle-compute/simulation/declarations>
 
 shared uint values[64];
+
 void main() {
     uint i = ccParticleInvocationIndex();
     uint lane = gl_LocalInvocationID.x;
@@ -17,6 +18,7 @@ void main() {
     }
     values[lane] = value;
     barrier();
+
     for (uint step = 1u; step < 64u; step *= 2u) {
         uint addend = 0u;
         if (lane >= step) {
@@ -26,6 +28,7 @@ void main() {
         values[lane] += addend;
         barrier();
     }
+
     if (i < count) {
         control[offset + i] = values[lane] - value;
     }

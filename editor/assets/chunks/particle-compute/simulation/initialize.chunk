@@ -5,17 +5,21 @@ precision highp float;
 void main() {
     uint i = ccParticleInvocationIndex();
     if (i >= counts.x) return;
+
     control[scratchOffsets.z + i] = i;
     control[identityOffsets.x + i] = 0u;
     if (timeInfo.z < 0.5) {
         control[identityOffsets.w + i] = 0u;
     }
+
     if (i == 0u) {
         uint arc = control[PARTICLE_SIM_CTRL_ARC_TOTAL];
         uint last = control[PARTICLE_SIM_CTRL_ARC_LAST_TIME];
+
         for (uint j = 0u; j < PARTICLE_SIM_CTRL_HEADER_WORDS; j++) {
             control[j] = 0u;
         }
+
         control[PARTICLE_SIM_CTRL_ALIVE_OFFSET] = scratchOffsets.w;
         control[PARTICLE_SIM_CTRL_NEXT_ALIVE_OFFSET] = identityOffsets.y;
         control[PARTICLE_SIM_CTRL_FREE_COUNT] = counts.x;

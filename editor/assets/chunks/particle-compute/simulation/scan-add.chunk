@@ -5,6 +5,7 @@ precision highp float;
 void main() {
     uint i = ccParticleInvocationIndex();
     if (i >= scanParams.x) return;
+
     uint offset = scanParams.y;
     uint parentOffset = scanParams.z;
     control[offset + i] += control[parentOffset + i / 64u];

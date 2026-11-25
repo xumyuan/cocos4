@@ -6,6 +6,7 @@ precision highp float;
 void main() {
     uint h = ccParticleInvocationIndex();
     if (h >= limits.x) return;
+
     uint m = metaBase(h), index = control[mapBase() + h];
     control[m + PARTICLE_TRAIL_META_INDEX_COUNT] = 0u;
     if (index == PARTICLE_INVALID_INDEX) {
@@ -15,6 +16,7 @@ void main() {
         control[m + PARTICLE_TRAIL_META_COUNT] = 0u;
         return;
     }
+
     ParticleState p = particles[index];
     if (control[m + PARTICLE_TRAIL_META_GENERATION] != p.identity.z) {
         control[m + PARTICLE_TRAIL_META_GENERATION] = p.identity.z;
@@ -22,20 +24,24 @@ void main() {
         control[m + PARTICLE_TRAIL_META_HEAD] = 0u;
         control[m + PARTICLE_TRAIL_META_COUNT] = 0u;
     }
+
     uint phase = control[m + PARTICLE_TRAIL_META_PHASE];
     // CPU loopCount/lastLoop/trailDelay: three returns, then allocation also returns.
     if (phase < 4u) {
         control[m + PARTICLE_TRAIL_META_PHASE] = phase + 1u;
         return;
     }
+
     uint head = control[m + PARTICLE_TRAIL_META_HEAD];
     uint count = control[m + PARTICLE_TRAIL_META_COUNT];
     vec3 position = trailPosition(p);
     bool appendPoint = true;
+
     if (count > 0u) {
         vec3 lastPosition = points[pointAt(h, head, count - 1u)].positionAge.xyz;
         float age = p.velocityLife.w != 0.0 ? 1.0 - p.positionLife.w / p.velocityLife.w : 0.0;
         uint expired = 0u;
+
         for (uint j = 0u; j < count; ++j) {
             uint at = pointAt(h, head, j);
             TrailPoint point = points[at];
@@ -43,18 +49,22 @@ void main() {
             if (ccParam(PARTICLE_TRAIL_MOD_COLOR_FROM_PARTICLE) != 0.0) {
                 tint = ccByteColor(p.color * tint);
             }
+
             point.positionAge.w += tick.x;
             point.tangentWidth.w = pointWidth(p, point.positionAge.w);
             point.colorDirection.x = packColor(tint);
             points[at] = point;
             if (point.positionAge.w > tick.y) ++expired;
         }
+
         head = (head + expired) % limits.y;
         count -= expired;
+
         // CPU compares the last sampled position even when its point expired above.
         vec3 delta = lastPosition - position;
         appendPoint = dot(delta, delta) >= ccParam(PARTICLE_TRAIL_MOD_MIN_DISTANCE_SQUARED);
     }
+
     if (appendPoint) {
         if (count == limits.y) {
             // Explicit history budget: drop oldest and report overflow, never overrun buffers.
@@ -62,6 +72,7 @@ void main() {
             --count;
             atomicAdd(control[PARTICLE_TRAIL_CTRL_OVERFLOW], 1u);
         }
+
         uint at = pointAt(h, head, count);
         TrailPoint point;
         point.positionAge = vec4(position, 0.0);
@@ -71,6 +82,7 @@ void main() {
         point.colorDirection = uvec4(packColor(tint), 0u, 0u, 0u);
         points[at] = point;
         ++count;
+
         if (count == 2u) {
             uint previous = pointAt(h, head, count - 2u);
             points[previous].tangentWidth.xyz = position - points[previous].positionAge.xyz;
@@ -85,9 +97,11 @@ void main() {
             points[previous].colorDirection.y = reverseDirection(tangent, points[third]);
         }
     }
+
     control[m + PARTICLE_TRAIL_META_HEAD] = head;
     control[m + PARTICLE_TRAIL_META_COUNT] = count;
     if (count == 0u) return;
+
     uint last = pointAt(h, head, count - 1u);
     vec3 tipTangent = position - points[last].positionAge.xyz;
     if (count <= 2u)
@@ -99,6 +113,7 @@ void main() {
         points[last].colorDirection.y = reverseDirection(points[last].tangentWidth.xyz, points[previous]);
         tipTangent = safeNormalize(tipTangent);
     }
+
     uint edges = nearZero(tipTangent) ? count - 1u : count;
     control[m + PARTICLE_TRAIL_META_INDEX_COUNT] = edges * 6u;
 }

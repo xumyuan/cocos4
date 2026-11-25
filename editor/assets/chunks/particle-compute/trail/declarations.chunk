@@ -10,43 +10,53 @@ struct TrailPoint {
     vec4 tangentWidth;
     uvec4 colorDirection;
 };
+
 #pragma rate TrailParams pass
 layout(std140) uniform TrailParams {
     uvec4 limits;
     vec4 tick;
     mat4 world;
 };
+
 #pragma rate SimulationState pass
 layout(std430) readonly buffer SimulationState {
     ParticleState particles[];
 };
+
 #pragma rate SimulationCounters pass
 layout(std430) readonly buffer SimulationCounters {
     uint counters[];
 };
+
 #pragma rate TrailControl pass
 layout(std430) buffer TrailControl {
     uint control[];
 };
+
 #pragma rate TrailHistory pass
 layout(std430) buffer TrailHistory {
     TrailPoint points[];
 };
+
 #pragma rate TrailModules pass
 layout(std430) readonly buffer TrailModules {
     float moduleData[];
 };
+
 #pragma rate TrailVertices pass
 layout(std430) buffer TrailVertices {
     uint vertices[];
 };
+
 #pragma rate TrailIndices pass
 layout(std430) buffer TrailIndices {
     uint indices[];
 };
+
 float ccModuleData(uint i) {
     return moduleData[i];
 }
+
 #ifdef CC_TRAIL_USE_CURVES
 #include <particle-compute/common/curves>
 #endif
@@ -54,35 +64,44 @@ float ccModuleData(uint i) {
 uint mapBase() {
     return PARTICLE_TRAIL_CTRL_HEADER_WORDS + limits.z;
 }
+
 uint metaBase(uint handle) {
     return mapBase() + limits.x + handle * PARTICLE_TRAIL_META_WORDS;
 }
+
 uint pointAt(uint handle, uint head, uint j) {
     return handle * limits.y + (head + j) % limits.y;
 }
+
 vec3 trailPosition(ParticleState p) {
     return limits.w != 0u ? (world * vec4(p.positionLife.xyz, 1.0)).xyz : p.positionLife.xyz;
 }
+
 vec3 safeNormalize(vec3 v) {
     float len = length(v);
     return len > 0.0 ? v / len : vec3(0.0);
 }
+
 bool nearZero(vec3 v) {
     return all(lessThanEqual(abs(v), vec3(0.000001)));
 }
+
 uint packColor(vec4 c) {
     uvec4 bytes = uvec4(roundEven(clamp(c, 0.0, 1.0) * 255.0));
     return bytes.x | (bytes.y << 8u) | (bytes.z << 16u) | (bytes.w << 24u);
 }
+
 vec4 unpackColor(uint c) {
     return vec4(c & 255u, (c >> 8u) & 255u, (c >> 16u) & 255u, (c >> 24u) & 255u) / 255.0;
 }
+
 #ifdef CC_TRAIL_USE_CURVES
 float pointWidth(ParticleState p, float age) {
     float normalized = tick.y > 0.0 ? age / tick.y : (age == 0.0 ? 0.0 : 1.0);
     return ccCurve(PARTICLE_TRAIL_MOD_WIDTH, normalized, 1.0) * (ccParam(PARTICLE_TRAIL_MOD_WIDTH_FROM_PARTICLE) != 0.0 ? p.size.x : 1.0);
 }
 #endif
+
 uint reverseDirection(vec3 current, TrailPoint previous) {
     return dot(current, previous.tangentWidth.xyz) < -0.1736481776669303 ? 1u - previous.colorDirection.y
                                                                          : previous.colorDirection.y;

@@ -10,25 +10,31 @@ void main() {
     uint lane = gl_LocalInvocationID.x;
     uint group = ccParticleGroupIndex();
     uint alive = 0u;
+
     if (i < control[PARTICLE_SIM_CTRL_ACTIVE_COUNT]) {
         uint handle = control[control[PARTICLE_SIM_CTRL_ALIVE_OFFSET] + i];
         ParticleState p = states[handle];
+
         // Compensated subtraction limits lifetime drift against the CPU's f64 accumulator.
         // size.w is simulation-only; all size modules and renderers use size.xyz.
         float decrement = -gravityDt.w - p.size.w;
         float remaining = p.positionLife.w + decrement;
         p.size.w = (remaining - p.positionLife.w) - decrement;
         p.positionLife.w = remaining;
+
         if (p.positionLife.w >= 0.0) {
             ccApplyParticleModules(p, gravityDt.w, timeInfo.x, simMeta.x, gravityDt.xyz);
             p.positionLife.xyz += p.renderVelocity.xyz * gravityDt.w;
+
             states[handle] = p;
             alive = 1u;
         }
     }
+
     // Inactive lanes participate in every barrier, including a padded final workgroup.
     values[lane] = alive;
     barrier();
+
     for (uint step = 1u; step < 64u; step *= 2u) {
         uint addend = 0u;
         if (lane >= step) {
@@ -38,6 +44,7 @@ void main() {
         values[lane] += addend;
         barrier();
     }
+
     if (i < control[PARTICLE_SIM_CTRL_ACTIVE_COUNT]) {
         control[scratchOffsets.x + i] = (values[lane] - alive) | (alive != 0u ? PARTICLE_PREFIX_ALIVE_BIT : 0u);
     }

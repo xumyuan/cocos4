@@ -7,6 +7,7 @@ precision highp float;
 void main() {
     uint i = ccParticleInvocationIndex();
     if (i >= control[PARTICLE_SIM_CTRL_ACCEPTED]) return;
+
     uint lo = 0u;
     uint hi = counts.z;
     while (lo < hi) {
@@ -17,20 +18,25 @@ void main() {
             lo = mid + 1u;
         }
     }
+
     if (lo >= counts.z || i < birthWords[lo * PARTICLE_BIRTH_BATCH_HEADER_WORDS + PARTICLE_BIRTH_BATCH_BEGIN]) return;
+
     uint handle = control[scratchOffsets.z + control[PARTICLE_SIM_CTRL_FREE_TOP_BEFORE] - 1u - i];
     uint generation = control[identityOffsets.x + handle] + 1u;
     control[identityOffsets.x + handle] = generation;
+
     // Keep the original birth stream for existing effects and explicit seeds.
     uint epochSalt = floatBitsToUint(float(simMeta.y));
     uint key = birthHash((control[PARTICLE_SIM_CTRL_EMITTED_TOTAL] + i + epochSalt) ^ (simMeta.z & 0xbfffffffu));
     ParticleState p = ccSpawnParticle(birthWords[lo * PARTICLE_BIRTH_BATCH_HEADER_WORDS + PARTICLE_BIRTH_BATCH_SNAPSHOT], key, handle, generation,
                                       uintBitsToFloat(control[identityOffsets.z + lo]));
+
     // CPU Particle.reset does not clear startRow; retain it across pooled reuse
     // when Texture initialization is disabled, including clear/restart.
     if ((uint(ccParam(PARTICLE_MODULE_FLAGS)) & PARTICLE_MODULE_FLAG_TEXTURE) == 0u) {
         p.startSize.w = uintBitsToFloat(control[identityOffsets.w + handle]);
     }
+
     control[identityOffsets.w + handle] = floatBitsToUint(p.startSize.w);
     states[handle] = p;
     uint aliveIn = control[PARTICLE_SIM_CTRL_ALIVE_OFFSET];

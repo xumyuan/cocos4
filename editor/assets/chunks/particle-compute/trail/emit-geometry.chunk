@@ -19,18 +19,22 @@ void emitPair(uint vertex, vec3 position, vec3 tangent, float width, uint direct
         vertices[at + PARTICLE_TRAIL_VERTEX_COLOR] = packedColor;
     }
 }
+
 void main() {
     uint h = ccParticleInvocationIndex();
     if (h >= limits.x) return;
+
     uint m = metaBase(h);
     uint edges = control[m + PARTICLE_TRAIL_META_INDEX_COUNT] / 6u;
     if (edges == 0u) return;
+
     uint head = control[m + PARTICLE_TRAIL_META_HEAD];
     uint count = control[m + PARTICLE_TRAIL_META_COUNT];
     uint index = control[mapBase() + h];
     ParticleState p = particles[index];
     uint vertex = h * (limits.y + 1u) * 2u;
     uint pairCount = edges == count ? count + 1u : count;
+
     for (uint j = 0u; j < pairCount; ++j) {
         vec3 pos;
         vec3 tanVec;
@@ -39,6 +43,7 @@ void main() {
         float u;
         uint randKey;
         vec4 baseColor;
+
         if (j < count) {
             TrailPoint point = points[pointAt(h, head, j)];
             pos = point.positionAge.xyz;
@@ -61,9 +66,11 @@ void main() {
             randKey = p.identity.x ^ uint(tick.w);
             baseColor = p.color;
         }
+
         vec4 tint = ccColor(PARTICLE_TRAIL_MOD_COLOR_OVER_TRAIL, u, 1.0, ccParticleRandomPair(randKey));
         emitPair(vertex + j * 2u, pos, tanVec, width, dir, u, packColor(baseColor * tint));
     }
+
     uint base = control[m + PARTICLE_TRAIL_META_INDEX_PREFIX] + control[PARTICLE_TRAIL_CTRL_HEADER_WORDS + ccParticleGroupIndex()];
     for (uint j = 0u; j < edges; ++j) {
         uint v = vertex + j * 2u, at = base + j * 6u;

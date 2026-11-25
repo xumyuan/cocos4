@@ -5,25 +5,31 @@ precision highp float;
 void main() {
     uint h = ccParticleInvocationIndex();
     if (h >= limits.x) return;
+
     uint m = metaBase(h);
     uint generation = control[m + PARTICLE_TRAIL_META_GENERATION];
     uint phase = control[m + PARTICLE_TRAIL_META_PHASE];
+
     for (uint j = 0u; j < PARTICLE_TRAIL_META_WORDS; ++j) {
         control[m + j] = 0u;
     }
+
     if (tick.z < 0.0) {
         // Disabling the trail clears its Map, not Particle.lastLoop/trailDelay.
         control[m + PARTICLE_TRAIL_META_GENERATION] = generation;
         control[m + PARTICLE_TRAIL_META_PHASE] = min(phase, 3u);
     }
+
     control[mapBase() + h] = PARTICLE_INVALID_INDEX;
     if (h < limits.z) {
         control[PARTICLE_TRAIL_CTRL_HEADER_WORDS + h] = 0u;
     }
+
     if (h == 0u) {
         for (uint j = 0u; j < PARTICLE_TRAIL_CTRL_HEADER_WORDS; ++j) {
             control[j] = 0u;
         }
+
         control[PARTICLE_TRAIL_CTRL_INSTANCE_COUNT] = 1u;
     }
 }

@@ -4,6 +4,7 @@
 vec3 birthVec3(uint base, uint offset) {
     return vec3(birthRead(base, offset), birthRead(base, offset + 1u), birthRead(base, offset + 2u));
 }
+
 vec4 birthVec4(uint base, uint offset) {
     return vec4(birthVec3(base, offset), birthRead(base, offset + 3u));
 }
@@ -16,6 +17,7 @@ uint birthHash(uint v) {
     v *= 0x846ca68bu;
     return v ^ (v >> 16u);
 }
+
 float birthRandom(inout uint seed) {
     seed = birthHash(seed + 0x9e3779b9u);
     return float(seed >> 8u) / 16777216.0;
@@ -26,9 +28,11 @@ vec3 birthNormal(vec3 v) {
     float n = length(v);
     return n > 0.0 ? v / n : vec3(0.0);
 }
+
 vec3 birthRotate(vec4 q, vec3 v) {
     return dot(q, q) * v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
 }
+
 vec4 birthMultiply(vec4 a, vec4 b) {
     return vec4(a.w * b.xyz + b.w * a.xyz + cross(a.xyz, b.xyz), a.w * b.w - dot(a.xyz, b.xyz));
 }
@@ -43,6 +47,7 @@ vec3 birthToEuler(vec4 q) {
     float t = q.x * q.y + q.z * q.w;
     if (t > 0.499999) return vec3(0.0, 2.0 * atan(q.x, q.w), 1.5707963268);
     if (t < -0.499999) return vec3(0.0, -2.0 * atan(q.x, q.w), -1.5707963268);
+
     return vec3(atan(2.0 * q.x * q.w - 2.0 * q.y * q.z, 1.0 - 2.0 * q.x * q.x - 2.0 * q.z * q.z),
                 atan(2.0 * q.y * q.w - 2.0 * q.x * q.z, 1.0 - 2.0 * q.y * q.y - 2.0 * q.z * q.z),
                 asin(clamp(2.0 * t, -1.0, 1.0)));
@@ -53,11 +58,11 @@ vec4 birthAlign(vec3 d) {
     float dotValue = -d.z;
     if (dotValue < -0.999999) return vec4(0, 1, 0, 0);
     if (dotValue > 0.999999) return vec4(0, 0, 0, 1);
+
     return normalize(vec4(cross(vec3(0, 0, -1), d), 1.0 + dotValue));
 }
 
 ParticleState ccSpawnParticle(uint birthBase, uint randomKey, uint handle, uint generation, float arcAngle) {
-
     uint randomState = randomKey;
     float initialRand = birthRandom(randomState);
     vec3 pos = vec3(0), dir = vec3(0, 0, -1);
@@ -68,6 +73,7 @@ ParticleState ccSpawnParticle(uint birthBase, uint randomKey, uint handle, uint 
         uint emitLocation = uint(birthRead(birthBase, PARTICLE_BIRTH_EMIT_FROM));
         float radius = birthRead(birthBase, PARTICLE_BIRTH_RADIUS);
         float thickness = birthRead(birthBase, PARTICLE_BIRTH_RADIUS_THICKNESS);
+
         if (shape == PARTICLE_SHAPE_BOX) {
             pos = vec3(birthRandom(randomState), birthRandom(randomState), birthRandom(randomState)) - 0.5;
             if (emitLocation == PARTICLE_EMIT_FROM_EDGE || emitLocation == PARTICLE_EMIT_FROM_SHELL) {
@@ -77,6 +83,7 @@ ParticleState ccSpawnParticle(uint birthBase, uint randomKey, uint handle, uint 
                     uint axis2 = (axis + 1u + uint(birthRandom(randomState) * 2.0)) % 3u;
                     pos[axis2] = birthRandom(randomState) < 0.5 ? -0.5 : 0.5;
                 }
+
                 vec3 boxT = birthVec3(birthBase, PARTICLE_BIRTH_BOX_THICKNESS);
                 pos = clamp(
                     pos + (vec3(birthRandom(randomState), birthRandom(randomState), birthRandom(randomState)) * 2.0 -
@@ -114,18 +121,22 @@ ParticleState ccSpawnParticle(uint birthBase, uint randomKey, uint handle, uint 
             }
             dir = birthNormal(pos);
         }
+
         float jitter = birthRead(birthBase, PARTICLE_BIRTH_RANDOM_POSITION_AMOUNT);
         if (jitter > 0.0)
             pos += (vec3(birthRandom(randomState), birthRandom(randomState), birthRandom(randomState)) * 2.0 - 1.0) *
                    jitter;
+
         vec4 shapeQ = birthVec4(birthBase, PARTICLE_BIRTH_SHAPE_ROTATION);
         dir = birthRotate(shapeQ, dir);
         pos = birthRotate(shapeQ, pos * birthVec3(birthBase, PARTICLE_BIRTH_SCALE)) + birthVec3(birthBase, PARTICLE_BIRTH_POSITION);
+
         float sphericalDirection = birthRead(birthBase, PARTICLE_BIRTH_SPHERICAL_DIRECTION_AMOUNT);
         if (sphericalDirection > 0.0) {
             dir = mix(dir, birthNormal(pos), sphericalDirection);
         }
     }
+
     if (birthRead(birthBase, PARTICLE_BIRTH_WORLD_SPACE) > 0.5) {
         mat4 world = mat4(
             birthVec4(birthBase, PARTICLE_BIRTH_WORLD_MATRIX),
@@ -136,15 +147,18 @@ ParticleState ccSpawnParticle(uint birthBase, uint randomKey, uint handle, uint 
         pos = (world * vec4(pos, 1)).xyz;
         dir = birthRotate(birthVec4(birthBase, PARTICLE_BIRTH_WORLD_ROTATION), dir);
     }
+
     float time = birthRead(birthBase, PARTICLE_BIRTH_NORMALIZED_TIME);
     ccEvaluateParticleCurves(true, time, initialRand, 0u);
     float life = ccInitialLifetime(time, initialRand) + birthRead(birthBase, PARTICLE_BIRTH_EMIT_DT);
+
     ParticleState p;
     p.positionLife = vec4(pos, life);
     p.velocityLife = vec4(dir * ccInitialSpeed(time, initialRand), life);
     p.renderVelocity = vec4(p.velocityLife.xyz, 0);
     p.identity = uvec4(uint(birthRandom(randomState) * 233280.0), handle, generation, 0);
     ccInitializeParticleModules(p, time, initialRand);
+
     if (shaped && birthRead(birthBase, PARTICLE_BIRTH_ALIGN_TO_DIRECTION) > 0.5 && dot(dir, dir) > 0.0) {
         vec3 e = birthToEuler(normalize(birthMultiply(birthAlign(dir), birthEuler(p.rotation.xyz))));
         p.rotation = vec4(e, 0);
@@ -154,7 +168,9 @@ ParticleState ccSpawnParticle(uint birthBase, uint randomKey, uint handle, uint 
         } else if (mode == PARTICLE_RENDER_MODE_HORIZONTAL_BILLBOARD || mode == PARTICLE_RENDER_MODE_VERTICAL_BILLBOARD) {
             e = vec3(0, 0, e.z);
         }
+
         p.startRotation = birthEuler(e);
     }
+
     return p;
 }

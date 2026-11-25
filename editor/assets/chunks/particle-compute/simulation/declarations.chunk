@@ -12,6 +12,7 @@ layout(std140) uniform FrameParams {
     uvec4 identityOffsets;
     uvec4 scanParams;
 };
+
 #include <particle-compute/common/layout>
 #include <particle-compute/common/state>
 
@@ -19,21 +20,26 @@ layout(std140) uniform FrameParams {
 layout(std430) buffer StateBuffer {
     ParticleState states[];
 };
+
 #pragma rate Control pass
 layout(std430) buffer Control {
     uint control[];
 };
+
 #pragma rate BirthWords pass
 layout(std430) readonly buffer BirthWords {
     uint birthWords[];
 };
+
 #pragma rate ModuleWords pass
 layout(std430) readonly buffer ModuleWords {
     float moduleWords[];
 };
+
 float ccModuleData(uint index) {
     return moduleWords[index];
 }
+
 float birthRead(uint base, uint offset) {
     return uintBitsToFloat(birthWords[base + offset]);
 }
