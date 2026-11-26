@@ -111,20 +111,15 @@ export class ParticleComputeCurvePacker {
     public readonly values: number[];
     public readonly samples: number;
 
-    /** Custom-evaluator LUT error only; zero does not imply exact f32 arithmetic for direct curves. */
-    public maxSampledScalarError: number | undefined;
-
     public constructor (
         headerFloats = PARTICLE_COMPUTE_MODULE_HEADER_FLOATS,
         samples = DEFAULT_PARTICLE_COMPUTE_CURVE_SAMPLES,
-        estimateError = true,
     ) {
         if (!Number.isInteger(samples) || samples < 2 || samples > 4096) {
             throw new RangeError('Curve samples must be in [2, 4096]');
         }
         this.values = new Array(headerFloats).fill(0);
         this.samples = samples;
-        this.maxSampledScalarError = estimateError ? 0 : undefined;
     }
 
     public append (values: readonly number[]): number {
@@ -160,20 +155,6 @@ export class ParticleComputeCurvePacker {
             const time = count === 1 ? 0 : i / (count - 1);
             low.push(evaluate(time, 0));
             high.push(evaluate(time, 1));
-        }
-
-        // Estimate LUT interpolation error between samples at random ratios 0 and 1.
-        if (count > 1 && this.maxSampledScalarError !== undefined) {
-            for (let i = 0; i < count - 1; ++i) {
-                for (const fraction of [0.25, 0.5, 0.75]) {
-                    const time = (i + fraction) / (count - 1);
-                    this.maxSampledScalarError = Math.max(
-                        this.maxSampledScalarError,
-                        Math.abs(evaluate(time, 0) - (low[i] + (low[i + 1] - low[i]) * fraction)),
-                        Math.abs(evaluate(time, 1) - (high[i] + (high[i + 1] - high[i]) * fraction)),
-                    );
-                }
-            }
         }
 
         const minOffset = this.append(low);

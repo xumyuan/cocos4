@@ -66,13 +66,9 @@ export const ComputeModuleOffset = {
     SCALAR_END: 55,
     NOISE_PERM: 56,
     SHADER_FEATURES: 57,
-    FORCE_ROTATION: 64,
-    VELOCITY_ROTATION: 68,
-    LIMIT_ROTATION: 72,
 } as const;
 
 export const ComputeShaderFeature = {
-    VALID: 64,
     BIRTH_SPLINE: 1,
     BIRTH_GRADIENT: 2,
     UPDATE_SPLINE: 4,
@@ -120,21 +116,12 @@ export interface ParticleComputeModuleOptions {
     /** Sample budget for opaque/custom JS evaluators only; standard RealCurves retain keys. */
     readonly samples?: number;
     readonly renderMode?: number;
-    /** Explicit transforms; identity preserves the current CPU renderer's disabled module.update calls. */
-    readonly forceRotation?: readonly [number, number, number, number];
-    readonly velocityRotation?: readonly [number, number, number, number];
-    readonly limitRotation?: readonly [number, number, number, number];
-    /** Reject custom-evaluator LUT error; does not measure direct-curve f32 roundoff. */
-    readonly maxSampledScalarError?: number;
-    /** Defaults to true. Providing an error threshold always enables estimation. */
-    readonly estimateError?: boolean;
 }
 
 export interface CompiledParticleComputeModules {
     readonly data: Float32Array;
     readonly flags: number;
     readonly samples: number;
-    readonly maxSampledScalarError: number | undefined;
 }
 
 function enabledModule<T extends { enable: boolean }> (module: T | null | undefined): T | undefined {
@@ -152,7 +139,6 @@ export function compileParticleComputeModules (
     const packer = new ParticleComputeCurvePacker(
         PARTICLE_COMPUTE_MODULE_HEADER_FLOATS,
         options.samples ?? DEFAULT_PARTICLE_COMPUTE_CURVE_SAMPLES,
-        options.estimateError !== false || options.maxSampledScalarError !== undefined,
     );
     const moduleData = packer.values;
     const offsets = ComputeModuleOffset;
@@ -276,7 +262,7 @@ export function compileParticleComputeModules (
         const mode = packer.values[moduleData[field] + ComputeColorOffset.MODE];
         return mode !== GradientRange.Mode.Color && mode !== GradientRange.Mode.TwoColors;
     };
-    let features = ComputeShaderFeature.VALID;
+    let features = 0;
     for (let field = offsets.START_SIZE_X; field <= offsets.START_LIFE; ++field) {
         if (isSpline(field)) {
             features |= ComputeShaderFeature.BIRTH_SPLINE;
@@ -318,27 +304,11 @@ export function compileParticleComputeModules (
     }
     moduleData[offsets.SHADER_FEATURES] = features;
 
-    const identity = [0, 0, 0, 1];
-    for (const [offset, value] of [
-        [offsets.FORCE_ROTATION, options.forceRotation ?? identity],
-        [offsets.VELOCITY_ROTATION, options.velocityRotation ?? identity],
-        [offsets.LIMIT_ROTATION, options.limitRotation ?? identity],
-    ] as const) {
-        for (let i = 0; i < 4; ++i) {
-            moduleData[offset + i] = value[i];
-        }
-    }
-
     const data = packer.finish();
 
     if (data.some((value) => !Number.isFinite(value))) {
         throw new RangeError('Particle module parameters must be finite');
     }
 
-    if (options.maxSampledScalarError !== undefined && packer.maxSampledScalarError !== undefined
-        && packer.maxSampledScalarError > options.maxSampledScalarError) {
-        throw new RangeError(`Particle curve LUT error ${packer.maxSampledScalarError} exceeds ${options.maxSampledScalarError}`);
-    }
-
-    return { data, flags, samples: packer.samples, maxSampledScalarError: packer.maxSampledScalarError };
+    return { data, flags, samples: packer.samples };
 }

@@ -111,11 +111,12 @@ export default class ParticleComputeModel extends ParticleBatchModel {
     /** Count is deliberately ignored: the GPU writes the real indirect count. */
     public updateIA (_count: number): void {
         if (!this._renderData || !this._simulationState || !this._simulationCounters || !this._renderDirty) return;
-        if (this._simulationActiveBound === undefined) {
-            this._renderData.prepare(this._simulationState, this._simulationCounters, this._textureAnimation);
-        } else {
-            this._renderData.prepare(this._simulationState, this._simulationCounters, this._textureAnimation, this._simulationActiveBound);
-        }
+        this._renderData.prepare(
+            this._simulationState,
+            this._simulationCounters,
+            this._textureAnimation,
+            this._simulationActiveBound ?? this._computeCapacity,
+        );
         this._renderDirty = false;
     }
 

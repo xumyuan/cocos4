@@ -360,7 +360,7 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
     private _moduleVersion = 0;
     private readonly _gravityComponents: [number, number, number] = [0, -9.8, 0];
     private readonly _moduleTracker = new ParticleComputeModuleConfigTracker();
-    private readonly _moduleOptions = { renderMode: ParticleRenderMode.Billboard, estimateError: false };
+    private readonly _moduleOptions = { renderMode: ParticleRenderMode.Billboard };
     private _compiledModuleData: Float32Array | null = null;
     private _trailTracker: ParticleComputeTrailConfigTracker | null = null;
     private _compiledTrail: CompiledParticleComputeTrail | null = null;
@@ -702,7 +702,7 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
         const recompiled = tracker.check(module);
         if (recompiled) {
             try {
-                this._compiledTrail = compileParticleComputeTrail(module, { estimateError: false });
+                this._compiledTrail = compileParticleComputeTrail(module);
             } catch (error) {
                 tracker.reset();
                 throw error;

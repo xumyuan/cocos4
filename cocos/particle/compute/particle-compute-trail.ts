@@ -68,7 +68,6 @@ const ComputeTrailShaderFeature = {
     WIDTH_SPLINE: 1 << 0,
     COLOR_OVERTIME_GRADIENT: 1 << 1,
     COLOR_OVER_TRAIL_GRADIENT: 1 << 2,
-    VALID: 1 << 6,
 } as const;
 
 const TRAIL_SHADERS: ReadonlyArray<{ name: string; singleGroup?: boolean }> = [
@@ -96,12 +95,10 @@ export interface CompiledParticleComputeTrail {
     readonly data: Float32Array;
     readonly lifeTime: ComputeScalar;
     readonly space: ParticleSpace;
-    readonly maxSampledScalarError: number | undefined;
 }
 
 interface TrailOptions {
     samples?: number;
-    estimateError?: boolean;
 }
 
 /**
@@ -120,7 +117,6 @@ export function compileParticleComputeTrail (
     const packer = new ParticleComputeCurvePacker(
         ComputeTrailOffset.HEADER_WORDS,
         options.samples ?? DEFAULT_PARTICLE_COMPUTE_CURVE_SAMPLES,
-        options.estimateError,
     );
     const { values } = packer;
     const offsets = ComputeTrailOffset;
@@ -137,8 +133,7 @@ export function compileParticleComputeTrail (
         return mode !== GradientRange.Mode.Color && mode !== GradientRange.Mode.TwoColors;
     };
     const feature = ComputeTrailShaderFeature;
-    values[offsets.SHADER_FEATURES] = feature.VALID
-        | (hasSpline ? feature.WIDTH_SPLINE : 0)
+    values[offsets.SHADER_FEATURES] = (hasSpline ? feature.WIDTH_SPLINE : 0)
         | (isGradient(offsets.COLOR_OVERTIME) ? feature.COLOR_OVERTIME_GRADIENT : 0)
         | (isGradient(offsets.COLOR_OVER_TRAIL) ? feature.COLOR_OVER_TRAIL_GRADIENT : 0);
 
@@ -146,7 +141,7 @@ export function compileParticleComputeTrail (
     if (space !== ParticleSpace.Local && space !== ParticleSpace.World) {
         throw new Error('Trail supports Local and World spaces');
     }
-    return { data: packer.finish(), lifeTime: source.lifeTime ?? 1, space, maxSampledScalarError: packer.maxSampledScalarError };
+    return { data: packer.finish(), lifeTime: source.lifeTime ?? 1, space };
 }
 
 const TRAIL_RESOURCES = [
@@ -424,9 +419,7 @@ export class ParticleComputeTrail {
         const mapLiveDispatch = liveGroups === 0 ? null
             : liveGroups === this._groups ? this._groupDispatch : createParticleComputeDispatch(this._device, liveGroups);
         const feature = ComputeTrailShaderFeature;
-        const rawFeatures = this._compiled.data[ComputeTrailOffset.SHADER_FEATURES] | 0;
-        const features = (rawFeatures & feature.VALID) !== 0
-            ? rawFeatures : feature.WIDTH_SPLINE | feature.COLOR_OVERTIME_GRADIENT | feature.COLOR_OVER_TRAIL_GRADIENT;
+        const features = this._compiled.data[ComputeTrailOffset.SHADER_FEATURES] | 0;
         const pipelines: PipelineState[] = [];
         for (let i = start; i < end; ++i) {
             const kernel = TRAIL_SHADERS[i];

@@ -117,7 +117,7 @@ export class ParticleComputeRenderData {
         return set;
     }
 
-    public prepare (state: Buffer, counters: Buffer, textureAnimation = false, activeBound = this._capacity): void {
+    public prepare (state: Buffer, counters: Buffer, textureAnimation: boolean, activeBound: number): void {
         if (this._destroyed) {
             throw new Error('ParticleComputeRenderData has been destroyed');
         }

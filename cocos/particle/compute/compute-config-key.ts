@@ -206,8 +206,6 @@ export class ParticleComputeModuleConfigTracker extends ConfigSnapshot {
         this.begin();
         this.value(options.samples);
         this.value(options.renderMode);
-        this.value(options.maxSampledScalarError);
-        this.value(options.estimateError);
         this.value(source.startSize3D);
         this.value(source.startRotation3D);
         this.scalar(source.gravityModifier);
@@ -300,21 +298,7 @@ export class ParticleComputeModuleConfigTracker extends ConfigSnapshot {
             this.value(noise.remapZ);
         }
 
-        this._rotation(options.forceRotation);
-        this._rotation(options.velocityRotation);
-        this._rotation(options.limitRotation);
         return this.end();
-    }
-
-    private _rotation (rotation: ParticleComputeModuleOptions['forceRotation']): void {
-        if (!rotation) {
-            this.value(null);
-            return;
-        }
-
-        for (let i = 0; i < rotation.length; ++i) {
-            this.value(rotation[i]);
-        }
     }
 }
 
