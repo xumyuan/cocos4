@@ -9,7 +9,7 @@ import { type Pass, scene } from '../../render-scene';
 import type { Camera } from '../../render-scene/scene/camera';
 import type { MacroRecord } from '../../render-scene/core/pass-utils';
 import { type IMaterialInstanceInfo, MaterialInstance } from '../../render-scene/core/material-instance';
-import type { IParticleModule, Particle } from '../particle';
+import { type IParticleModule, type Particle, PARTICLE_MODULE_NAME } from '../particle';
 import { ParticleAlignmentSpace, ParticleRenderMode, ParticleSpace } from '../enum';
 import type { ParticleSystem } from '../particle-system';
 import type ParticleSystemRenderer from './particle-system-renderer-data';
@@ -20,11 +20,24 @@ import { compileParticleComputeBirth, ParticleComputeBirthBatch } from '../compu
 import { compileParticleComputeModules } from '../compute/particle-compute-modules';
 import { compileParticleComputeTrail, ParticleComputeTrail } from '../compute/particle-compute-trail';
 import type { CompiledParticleComputeTrail } from '../compute/particle-compute-trail';
-import { getParticleComputeModuleConfigKey, getParticleComputeTrailConfigKey } from '../compute/compute-config-key';
+import { ParticleComputeModuleConfigTracker, ParticleComputeTrailConfigTracker } from '../compute/compute-config-key';
+
+const _gravityVec = new Vec3();
+const _gravityMatrix = new Mat4();
 
 /** GPU time values are f32; anything that overflows or is NaN becomes 0. */
 function finiteF32 (value: number): number {
     return Number.isFinite(Math.fround(value)) ? value : 0;
+}
+
+function sameModuleData (previous: Float32Array, next: Float32Array): boolean {
+    if (previous.length !== next.length) return false;
+
+    // The compiler rejects non-finite values. Object.is also distinguishes signed zero.
+    for (let i = 0; i < next.length; ++i) {
+        if (!Object.is(previous[i], next[i])) return false;
+    }
+    return true;
 }
 
 // TODO: Consider extracting the rendering setup shared by the CPU and Compute particle renderers.
@@ -341,16 +354,15 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
     private _committedBirthRevision = 0;
     private _pollPending = false;
     private _disposed = false;
-    private readonly _gravityVector = new Vec3();
-    private readonly _gravityMatrix = new Mat4();
     private _trail: ParticleComputeTrail | null = null;
     private _computeTrailModel: scene.Model | null = null;
     private _trailSubMesh: RenderingSubMesh | null = null;
     private _moduleVersion = 0;
     private readonly _gravityComponents: [number, number, number] = [0, -9.8, 0];
-    private _moduleConfigKey: string | null = null;
+    private readonly _moduleTracker = new ParticleComputeModuleConfigTracker();
+    private readonly _moduleOptions = { renderMode: ParticleRenderMode.Billboard, estimateError: false };
     private _compiledModuleData: Float32Array | null = null;
-    private _trailConfigKey: string | null = null;
+    private _trailTracker: ParticleComputeTrailConfigTracker | null = null;
     private _compiledTrail: CompiledParticleComputeTrail | null = null;
     private _trailEnabled = false;
 
@@ -482,33 +494,29 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
             this.updateRotation(material.passes[0]);
         }
 
-        const moduleOptions = { renderMode: ps.renderer.renderMode, estimateError: false };
-        const moduleKey = getParticleComputeModuleConfigKey(ps, moduleOptions);
-        if (!this._compiledModuleData || moduleKey === null || moduleKey !== this._moduleConfigKey) {
-            this._compiledModuleData = compileParticleComputeModules(ps, moduleOptions).data;
-            this._moduleConfigKey = moduleKey;
-            ++this._moduleVersion;
-        }
+        const moduleData = this._getModuleData(ps);
 
-        this._gravityVector.set(0, -9.8, 0);
+        _gravityVec.set(0, -9.8, 0);
         if (ps.simulationSpace === ParticleSpace.Local) {
+            // Apply parent world rotation then local rotation to match ParticleSystemRendererCPU
+            // even under non-uniform parent scale, where node.worldRotation is matrix-decomposed.
             if (ps.node.parent) {
-                Mat4.fromQuat(this._gravityMatrix, ps.node.parent.worldRotation);
-                this._gravityMatrix.transpose();
-                Vec3.transformMat4(this._gravityVector, this._gravityVector, this._gravityMatrix);
+                Mat4.fromQuat(_gravityMatrix, ps.node.parent.worldRotation);
+                _gravityMatrix.transpose();
+                Vec3.transformMat4(_gravityVec, _gravityVec, _gravityMatrix);
             }
-            Mat4.fromQuat(this._gravityMatrix, ps.node.getRotation());
-            this._gravityMatrix.transpose();
-            Vec3.transformMat4(this._gravityVector, this._gravityVector, this._gravityMatrix);
+            Mat4.fromQuat(_gravityMatrix, ps.node.getRotation());
+            _gravityMatrix.transpose();
+            Vec3.transformMat4(_gravityVec, _gravityVec, _gravityMatrix);
         }
 
-        this._gravityComponents[0] = this._gravityVector.x;
-        this._gravityComponents[1] = this._gravityVector.y;
-        this._gravityComponents[2] = this._gravityVector.z;
+        this._gravityComponents[0] = _gravityVec.x;
+        this._gravityComponents[1] = _gravityVec.y;
+        this._gravityComponents[2] = _gravityVec.z;
         this._simulation.tick(
             stepDt,
             this._births,
-            this._compiledModuleData,
+            moduleData,
             systemTime,
             this._gravityComponents,
             this._moduleVersion,
@@ -597,8 +605,11 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
         }
     }
 
-    public enableModule (_name: string, _enabled: boolean, _module: IParticleModule): void {
-        this.updateMaterialParams();
+    public enableModule (name: string, _enabled: boolean, _module: IParticleModule): void {
+        // TextureAnimationModule already refreshes the material in its enable setter.
+        if (name === PARTICLE_MODULE_NAME.ROTATION) {
+            this.updateMaterialParams();
+        }
     }
 
     public getNoisePreview (out: number[], width: number, height: number): void {
@@ -656,6 +667,24 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
         this._trail?.clearHistory();
     }
 
+    private _getModuleData (ps: ParticleSystem): Float32Array {
+        this._moduleOptions.renderMode = ps.renderer.renderMode;
+        const previous = this._compiledModuleData;
+        if (!this._moduleTracker.check(ps, this._moduleOptions) && previous) return previous;
+
+        try {
+            const next = compileParticleComputeModules(ps, this._moduleOptions).data;
+            if (previous && sameModuleData(previous, next)) return previous;
+
+            this._compiledModuleData = next;
+            ++this._moduleVersion;
+            return next;
+        } catch (error) {
+            this._moduleTracker.reset();
+            throw error;
+        }
+    }
+
     private _updateComputeTrail (dt: number, systemTime: number): void {
         const ps = this._particleSystem;
         const simulation = this._simulation;
@@ -669,11 +698,15 @@ export default class ParticleSystemRendererCompute extends ParticleSystemRendere
             return;
         }
         this._trailEnabled = true;
-        const trailKey = getParticleComputeTrailConfigKey(module);
-        const recompiled = !this._compiledTrail || trailKey === null || trailKey !== this._trailConfigKey;
+        const tracker = this._trailTracker ?? (this._trailTracker = new ParticleComputeTrailConfigTracker());
+        const recompiled = tracker.check(module);
         if (recompiled) {
-            this._compiledTrail = compileParticleComputeTrail(module, { estimateError: false });
-            this._trailConfigKey = trailKey;
+            try {
+                this._compiledTrail = compileParticleComputeTrail(module, { estimateError: false });
+            } catch (error) {
+                tracker.reset();
+                throw error;
+            }
         }
         const compiled = this._compiledTrail!;
         const maxPoints = ps.renderer.computeTrailMaxPoints;

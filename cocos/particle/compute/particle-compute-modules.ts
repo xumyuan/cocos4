@@ -137,6 +137,10 @@ export interface CompiledParticleComputeModules {
     readonly maxSampledScalarError: number | undefined;
 }
 
+function enabledModule<T extends { enable: boolean }> (module: T | null | undefined): T | undefined {
+    return module?.enable ? module : undefined;
+}
+
 /**
  * @engineInternal
  * Compile module parameters/curves when assets change; no particle state is simulated on CPU.
@@ -158,42 +162,42 @@ export function compileParticleComputeModules (
         moduleData[offset] = packer.scalar(curve, fallback);
     };
 
-    const size = source.sizeOvertimeModule;
-    const color = source.colorOverLifetimeModule;
-    const force = source.forceOvertimeModule;
-    const velocity = source.velocityOvertimeModule;
-    const limit = source.limitVelocityOvertimeModule;
-    const rotation = source.rotationOvertimeModule;
-    const texture = source.textureAnimationModule;
-    const noise = source.noiseModule;
+    const size = enabledModule(source.sizeOvertimeModule);
+    const color = enabledModule(source.colorOverLifetimeModule);
+    const force = enabledModule(source.forceOvertimeModule);
+    const velocity = enabledModule(source.velocityOvertimeModule);
+    const limit = enabledModule(source.limitVelocityOvertimeModule);
+    const rotation = enabledModule(source.rotationOvertimeModule);
+    const texture = enabledModule(source.textureAnimationModule);
+    const noise = enabledModule(source.noiseModule);
 
     let flags = 0;
-    if (size?.enable) {
+    if (size) {
         flags |= ComputeModuleFlag.SIZE;
     }
-    if (color?.enable) {
+    if (color) {
         flags |= ComputeModuleFlag.COLOR;
     }
-    if (force?.enable) {
+    if (force) {
         flags |= ComputeModuleFlag.FORCE;
     }
-    if (velocity?.enable) {
+    if (velocity) {
         flags |= ComputeModuleFlag.VELOCITY;
     }
-    if (limit?.enable) {
+    if (limit) {
         flags |= ComputeModuleFlag.LIMIT;
     }
-    if (rotation?.enable) {
+    if (rotation) {
         flags |= ComputeModuleFlag.ROTATION;
     }
-    if (texture?.enable) {
+    if (texture) {
         flags |= ComputeModuleFlag.TEXTURE;
     }
-    if (noise?.enable) {
+    if (noise) {
         flags |= ComputeModuleFlag.NOISE;
     }
 
-    if (texture?.enable && (!Number.isInteger(texture.numTilesX) || texture.numTilesX < 1
+    if (texture && (!Number.isInteger(texture.numTilesX) || texture.numTilesX < 1
         || !Number.isInteger(texture.numTilesY) || texture.numTilesY < 1)) {
         throw new RangeError('Enabled texture animation requires positive integer tile counts');
     }
@@ -257,7 +261,7 @@ export function compileParticleComputeModules (
     moduleData[offsets.NOISE_MULTIPLIER] = noise?.octaveMultiplier ?? 0.5;
     moduleData[offsets.NOISE_SCALE] = noise?.octaveScale ?? 2;
 
-    if (noise?.enable) {
+    if (noise) {
         const octaves = noise.octaves ?? 1;
         if (!Number.isInteger(octaves) || octaves < 1 || octaves > 4) {
             throw new RangeError('Noise octaves must be in [1, 4]');
